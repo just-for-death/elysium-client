@@ -4,7 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
+  media_kit_video
   url_launcher_windows
+  volume_controller
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
