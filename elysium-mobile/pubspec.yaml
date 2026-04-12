@@ -34,6 +34,14 @@ dependencies:
   gap: ^3.0.1
   shimmer: ^3.0.0
   cupertino_icons: ^1.0.8
+  url_launcher: ^6.3.2
+  shared_preferences_linux: ^2.4.1
+  path_provider_linux: ^2.2.1
+  url_launcher_linux: ^3.2.2
+  just_audio_media_kit: ^2.1.0
+  media_kit: ^1.1.10
+  media_kit_video: ^1.2.4
+  media_kit_libs_linux: ^1.2.1
 
 dev_dependencies:
   flutter_test:

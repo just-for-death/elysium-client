@@ -1,7 +1,8 @@
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api/elysium_api.dart';
+import '../models/models.dart';
 import '../models/track.dart';
 
 // ── Preferences keys ────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ class PlayerState {
   final bool shuffled;
   final ElysiumRepeatMode repeatMode;
   final List<Track> favorites;
+  final bool videoMode;
 
   const PlayerState({
     this.queue = const [],
@@ -58,6 +60,7 @@ class PlayerState {
     this.shuffled = false,
     this.repeatMode = ElysiumRepeatMode.off,
     this.favorites = const [],
+    this.videoMode = false,
   });
 
   Track? get currentTrack =>
@@ -77,6 +80,7 @@ class PlayerState {
     bool? shuffled,
     ElysiumRepeatMode? repeatMode,
     List<Track>? favorites,
+    bool? videoMode,
   }) =>
       PlayerState(
         queue: queue ?? this.queue,
@@ -87,37 +91,41 @@ class PlayerState {
         shuffled: shuffled ?? this.shuffled,
         repeatMode: repeatMode ?? this.repeatMode,
         favorites: favorites ?? this.favorites,
+        videoMode: videoMode ?? this.videoMode,
       );
 }
 
 // ── Player Notifier ───────────────────────────────────────────────────────────
 final playerProvider =
     StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
-  return PlayerNotifier();
+  return PlayerNotifier(ref);
 });
 
 class PlayerNotifier extends StateNotifier<PlayerState> {
-  late final AudioPlayer _player;
+  late final Player _player;
+  final Ref _ref;
 
-  PlayerNotifier() : super(const PlayerState()) {
-    _player = AudioPlayer();
+  PlayerNotifier(this._ref) : super(const PlayerState()) {
+    _player = Player();
     _listenToPlayer();
   }
 
-  AudioPlayer get audioPlayer => _player;
+  ElysiumApi get _api => ElysiumApi(_ref.read(serverIpProvider));
+
+  Player get player => _player;
 
   void _listenToPlayer() {
-    _player.playingStream.listen((playing) {
+    _player.stream.playing.listen((playing) {
       state = state.copyWith(isPlaying: playing);
     });
-    _player.positionStream.listen((pos) {
+    _player.stream.position.listen((pos) {
       state = state.copyWith(position: pos);
     });
-    _player.durationStream.listen((dur) {
-      if (dur != null) state = state.copyWith(duration: dur);
+    _player.stream.duration.listen((dur) {
+      state = state.copyWith(duration: dur);
     });
-    _player.playerStateStream.listen((ps) {
-      if (ps.processingState == ProcessingState.completed) {
+    _player.stream.completed.listen((completed) {
+      if (completed) {
         _onTrackComplete();
       }
     });
@@ -137,17 +145,93 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         }
     }
   }
+  Future<void> fetchSettings() async {
+    final s = await _api.getSettings();
+    state = state.copyWith(videoMode: s.videoMode);
+  }
+
+  Future<void> toggleVideoMode() async {
+    final newMode = !state.videoMode;
+    state = state.copyWith(videoMode: newMode);
+    await _api.updateSettings({'videoMode': newMode});
+    // If playing, re-resolve for new format
+    if (state.currentIndex != -1) {
+      await playIndex(state.currentIndex);
+    }
+  }
 
   Future<void> playIndex(int index) async {
     if (index < 0 || index >= state.queue.length) return;
     state = state.copyWith(currentIndex: index);
     final track = state.queue[index];
-    final url = track.url;
-    if (url != null && url.isNotEmpty) {
-      try {
-        await _player.setUrl(url);
-        await _player.play();
-      } catch (_) {}
+
+    try {
+      String? playUrl = track.url;
+      final settings = await _api.getSettings();
+      state = state.copyWith(videoMode: settings.videoMode);
+      
+      final instance = settings.invidiousInstance.isNotEmpty 
+          ? settings.invidiousInstance 
+          : 'https://yt.ikiagi.loseyourip.com';
+
+      // ── Stream Resolution Logic ───────────────────────────────────────────
+      if (track.videoId != null) {
+        final details = await _api.getVideoDetails(track.videoId!,
+            instanceUrl: instance, sid: settings.invidiousSid);
+        
+        final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
+        dynamic bestFormat;
+        
+        if (state.videoMode) {
+          // Prefer high-quality video formats (MP4 usually has audio+video combined in some cases, 
+          // but adaptive usually separates them. media_kit can handle muxing if we provide both, 
+          // but for simplicity we'll look for the non-adaptive 'format' or best adaptive video)
+          bestFormat = formats.firstWhere(
+            (f) => (f['type']?.toString().contains('video/') ?? false) && f['videoOnly'] != true,
+            orElse: () => formats.firstWhere(
+              (f) => f['type']?.toString().contains('video/') ?? false,
+              orElse: () => formats.isNotEmpty ? formats.first : null,
+            ),
+          );
+        } else {
+          bestFormat = formats.firstWhere(
+            (f) => f['type']?.toString().startsWith('audio/') ?? false,
+            orElse: () => formats.isNotEmpty ? formats.first : null,
+          );
+        }
+        
+        if (bestFormat != null && bestFormat['url'] != null) {
+          playUrl = bestFormat['url'];
+        }
+      } else if (playUrl != null && (playUrl.contains('apple.com') || playUrl.contains('itunes'))) {
+        final results = await _api.invidiousSearch('${track.artist} ${track.title} official audio',
+            instanceUrl: instance);
+        
+        if (results.isNotEmpty) {
+          final match = results.first;
+          final details = await _api.getVideoDetails(match.id,
+              instanceUrl: instance, sid: settings.invidiousSid);
+          
+          final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
+          final bestFormat = formats.firstWhere(
+            (f) => f['type']?.toString().startsWith('audio/') ?? false,
+            orElse: () => formats.isNotEmpty ? formats.first : null,
+          );
+          
+          if (bestFormat != null && bestFormat['url'] != null) {
+            playUrl = bestFormat['url'];
+          }
+        }
+      }
+
+      if (playUrl != null && playUrl.isNotEmpty) {
+        await _player.open(Media(playUrl));
+      }
+    } catch (e) {
+      print('Playback error: $e');
+      if (track.url != null) {
+        await _player.open(Media(track.url!));
+      }
     }
   }
 
@@ -177,15 +261,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> togglePlayPause() async {
-    if (state.isPlaying) {
-      await _player.pause();
-    } else {
-      if (state.currentIndex == -1 && state.queue.isNotEmpty) {
-        await playIndex(0);
-      } else {
-        await _player.play();
-      }
-    }
+    await _player.playOrPause();
   }
 
   Future<void> seekTo(Duration position) async {
@@ -197,7 +273,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   void toggleShuffle() {
-    state = state.copyWith(shuffled: !state.shuffled);
+    final next = !state.shuffled;
+    state = state.copyWith(shuffled: next);
   }
 
   void cycleRepeat() {

@@ -90,8 +90,10 @@ class ElysiumSettings {
   final bool highQuality;
   final bool cacheEnabled;
   final String queueMode;
+  final String invidiousInstance;
   final String? invidiousSid;
   final String? invidiousUsername;
+  final bool videoMode;
 
   const ElysiumSettings({
     this.ollamaEnabled = false,
@@ -102,8 +104,10 @@ class ElysiumSettings {
     this.highQuality = false,
     this.cacheEnabled = true,
     this.queueMode = 'normal',
+    this.invidiousInstance = '',
     this.invidiousSid,
     this.invidiousUsername,
+    this.videoMode = false,
   });
 
   factory ElysiumSettings.fromJson(Map<String, dynamic> j) => ElysiumSettings(
@@ -115,8 +119,10 @@ class ElysiumSettings {
         highQuality: j['highQuality'] as bool? ?? false,
         cacheEnabled: j['cacheEnabled'] as bool? ?? true,
         queueMode: j['queueMode'] as String? ?? 'normal',
+        invidiousInstance: j['invidiousInstance'] as String? ?? '',
         invidiousSid: j['invidiousSid'] as String?,
         invidiousUsername: j['invidiousUsername'] as String?,
+        videoMode: j['videoMode'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -128,8 +134,10 @@ class ElysiumSettings {
         'highQuality': highQuality,
         'cacheEnabled': cacheEnabled,
         'queueMode': queueMode,
+        'invidiousInstance': invidiousInstance,
         if (invidiousSid != null) 'invidiousSid': invidiousSid,
         if (invidiousUsername != null) 'invidiousUsername': invidiousUsername,
+        'videoMode': videoMode,
       };
 
   ElysiumSettings copyWith({
@@ -141,8 +149,9 @@ class ElysiumSettings {
     bool? highQuality,
     bool? cacheEnabled,
     String? queueMode,
-    String? invidiousSid,
+    String? invidiousInstance,
     String? invidiousUsername,
+    bool? videoMode,
   }) =>
       ElysiumSettings(
         ollamaEnabled: ollamaEnabled ?? this.ollamaEnabled,
@@ -153,7 +162,9 @@ class ElysiumSettings {
         highQuality: highQuality ?? this.highQuality,
         cacheEnabled: cacheEnabled ?? this.cacheEnabled,
         queueMode: queueMode ?? this.queueMode,
+        invidiousInstance: invidiousInstance ?? this.invidiousInstance,
         invidiousSid: invidiousSid ?? this.invidiousSid,
         invidiousUsername: invidiousUsername ?? this.invidiousUsername,
+        videoMode: videoMode ?? this.videoMode,
       );
 }

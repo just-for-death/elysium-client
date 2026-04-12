@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
 import '../../core/store/providers.dart';
+import 'video_player_view.dart';
 
 enum _PlayerTab { cover, lyrics, queue }
 
@@ -139,6 +140,23 @@ class PlayerScreen extends HookConsumerWidget {
                             letterSpacing: 1,
                           ),
                         ),
+                      ),
+                      // Video Toggle
+                      IconButton(
+                        icon: Icon(
+                          player.videoMode
+                              ? Icons.videocam_rounded
+                              : Icons.videocam_outlined,
+                          size: 22,
+                          color: player.videoMode
+                              ? cs.primary
+                              : Colors.white60,
+                        ),
+                        onPressed: track == null
+                            ? null
+                            : () => ref
+                                .read(playerProvider.notifier)
+                                .toggleVideoMode(),
                       ),
                       IconButton(
                         icon: Icon(
@@ -420,6 +438,20 @@ class PlayerScreen extends HookConsumerWidget {
   ) {
     switch (tab) {
       case _PlayerTab.cover:
+        if (player.videoMode) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  child: VideoPlayerView(),
+                ),
+              ),
+            ),
+          );
+        }
         return ScaleTransition(
           scale: CurvedAnimation(
               parent: artworkAnim, curve: Curves.elasticOut),

@@ -13,12 +13,16 @@ class ElysiumApi {
   ElysiumApi(this.baseUrl);
 
   String get _lib => '$baseUrl/api/v1/library';
+  String get _invidious => '$baseUrl/api/invidious';
 
   // ── Core fetch helper ─────────────────────────────────────────────────────
-  Future<dynamic> _get(String url) async {
+  Future<dynamic> _get(String url, {Map<String, String>? headers}) async {
     final res = await http.get(
       Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        ...?headers,
+      },
     ).timeout(const Duration(seconds: 15));
     if (res.statusCode >= 400) {
       throw Exception('API ${res.statusCode}: $url');
@@ -26,10 +30,13 @@ class ElysiumApi {
     return json.decode(res.body);
   }
 
-  Future<dynamic> _post(String url, Map<String, dynamic> body) async {
+  Future<dynamic> _post(String url, Map<String, dynamic> body, {Map<String, String>? headers}) async {
     final res = await http.post(
       Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        ...?headers,
+      },
       body: json.encode(body),
     ).timeout(const Duration(seconds: 15));
     if (res.statusCode >= 400) {
@@ -166,6 +173,62 @@ class ElysiumApi {
 
   Future<dynamic> lyricsGet(String id) async {
     return _get('$baseUrl/api/lyrics-proxy/netease/lyric?id=$id');
+  }
+
+  // ── Invidious Proxy ───────────────────────────────────────────────────────
+  Future<List<Track>> invidiousSearch(String query, {required String instanceUrl, String type = 'video'}) async {
+    if (instanceUrl.isEmpty) return [];
+    final data = await _get(
+      '$_invidious/search?instanceUrl=${Uri.encodeComponent(instanceUrl)}&q=${Uri.encodeComponent(query)}&type=$type',
+    );
+    if (data is! List) return [];
+    return data.map((v) => Track(
+      id: v['videoId'] ?? '',
+      videoId: v['videoId'],
+      title: v['title'] ?? '',
+      artist: v['author'] ?? '',
+      artwork: v['videoThumbnails']?[0]?['url'],
+      duration: v['lengthSeconds'],
+    )).toList();
+  }
+
+  Future<Map<String, dynamic>> getVideoDetails(String videoId, {required String instanceUrl, String? sid}) async {
+    return await _get(
+      '$_invidious/video/$videoId',
+      headers: {
+        'x-invidious-instance': instanceUrl,
+        if (sid != null) 'x-invidious-sid': sid,
+      },
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> invidiousLogin(String instanceUrl, String username, String password) async {
+    return await _post(
+      '$_invidious/login',
+      {'instanceUrl': instanceUrl, 'username': username, 'password': password},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> getInvidiousPlaylists({required String instanceUrl, required String sid}) async {
+    final data = await _get(
+      '$_invidious/playlists',
+      headers: {
+        'x-invidious-instance': instanceUrl,
+        'x-invidious-sid': sid,
+      },
+    );
+    return data as List<dynamic>;
+  }
+
+  Future<dynamic> syncInvidiousPlaylist(String playlistId, {required String instanceUrl, required String sid}) async {
+    return await _post(
+      '$_invidious/sync-playlist/$playlistId',
+      {},
+      headers: {
+        'x-invidious-instance': instanceUrl,
+        'x-invidious-sid': sid,
+      },
+    );
   }
 
   // ── AI Queue ──────────────────────────────────────────────────────────────

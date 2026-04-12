@@ -27,6 +27,15 @@ class SettingsScreen extends HookConsumerWidget {
     final lbUserCtrl = useTextEditingController();
     final ollamaUrlCtrl = useTextEditingController();
     final ollamaModelCtrl = useTextEditingController();
+    final invidiousInstanceCtrl = useTextEditingController();
+
+    // Login controllers
+    final invUserCtrl = useTextEditingController();
+    final invPassCtrl = useTextEditingController();
+
+    // Playlist sync state
+    final invPlaylists = useState<List<dynamic>?>(null);
+    final plLoading = useState(false);
 
     Future<void> loadSettings() async {
       if (serverIp.isEmpty) return;
@@ -38,6 +47,7 @@ class SettingsScreen extends HookConsumerWidget {
         lbUserCtrl.text = s.listenBrainzUsername;
         ollamaUrlCtrl.text = s.ollamaUrl;
         ollamaModelCtrl.text = s.ollamaModel;
+        invidiousInstanceCtrl.text = s.invidiousInstance;
       } catch (_) {
         settings.value = null;
       } finally {
@@ -45,8 +55,24 @@ class SettingsScreen extends HookConsumerWidget {
       }
     }
 
+    Future<void> loadInvidiousPlaylists() async {
+      if (settings.value?.invidiousSid == null || serverIp.isEmpty) return;
+      plLoading.value = true;
+      try {
+        final pl = await api.getInvidiousPlaylists(
+          instanceUrl: settings.value!.invidiousInstance,
+          sid: settings.value!.invidiousSid!,
+        );
+        invPlaylists.value = pl;
+      } catch (_) {
+        invPlaylists.value = null;
+      } finally {
+        plLoading.value = false;
+      }
+    }
+
     useEffect(() {
-      loadSettings();
+      loadSettings().then((_) => loadInvidiousPlaylists());
       return null;
     }, [serverIp]);
 
@@ -54,13 +80,18 @@ class SettingsScreen extends HookConsumerWidget {
       if (settings.value == null) return;
       saving.value = true;
       try {
+        final instance = invidiousInstanceCtrl.text.trim();
+        final sanitizedInstance = instance.isNotEmpty ? Uri.parse(instance).origin : '';
+
         final updated = await api.updateSettings({
           ...settings.value!.toJson(),
           'listenBrainzToken': lbTokenCtrl.text,
           'listenBrainzUsername': lbUserCtrl.text,
           'ollamaUrl': ollamaUrlCtrl.text,
           'ollamaModel': ollamaModelCtrl.text,
+          'invidiousInstance': sanitizedInstance,
         });
+        invidiousInstanceCtrl.text = sanitizedInstance;
         settings.value = updated;
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -76,6 +107,62 @@ class SettingsScreen extends HookConsumerWidget {
       } finally {
         saving.value = false;
       }
+    }
+
+    Future<void> loginToInvidious() async {
+      if (settings.value == null) return;
+      final instance = invidiousInstanceCtrl.text.trim();
+      if (instance.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter an Invidious Instance URL first')),
+        );
+        return;
+      }
+      
+      final sanitizedInstance = Uri.parse(instance).origin;
+      invidiousInstanceCtrl.text = sanitizedInstance;
+      
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+          title: const Text('Log in to Invidious'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _StyledTextField(controller: invUserCtrl, hint: 'Username', isDark: isDark, cs: cs),
+              const SizedBox(height: 12),
+              _StyledTextField(controller: invPassCtrl, hint: 'Password', isDark: isDark, cs: cs, obscure: true),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                loading.value = true;
+                try {
+                  final res = await api.invidiousLogin(instance, invUserCtrl.text, invPassCtrl.text);
+                  if (res['sid'] != null) {
+                    await api.updateSettings({
+                      'invidiousSid': res['sid'],
+                      'invidiousUsername': invUserCtrl.text,
+                    });
+                    loadSettings();
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+                  }
+                } finally {
+                  loading.value = false;
+                }
+              },
+              child: const Text('Login'),
+            ),
+          ],
+        ),
+      );
     }
 
     return Scaffold(
@@ -142,10 +229,46 @@ class SettingsScreen extends HookConsumerWidget {
               ),
             ),
 
-            // ── Playback ──────────────────────────────────────────────────
+            // ── Invidious ───────────────────────────────────────────────────
             if (settings.value != null) ...[
-              _SectionHeader(
-                  label: 'Playback', isDark: isDark, cs: cs),
+              _SectionHeader(label: 'Invidious', isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SettingsLabel('Instance URL', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(
+                        controller: invidiousInstanceCtrl,
+                        hint: 'https://invidious.io',
+                        isDark: isDark,
+                        cs: cs,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _InvidiousStatus(
+                              isLoggedIn: settings.value!.invidiousUsername != null,
+                              username: settings.value!.invidiousUsername,
+                              isDark: isDark,
+                              cs: cs,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: loginToInvidious,
+                            icon: const Icon(Icons.login_rounded, size: 18),
+                            label: Text(settings.value!.invidiousUsername != null ? 'Switch' : 'Login'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
@@ -181,10 +304,83 @@ class SettingsScreen extends HookConsumerWidget {
                           api.updateSettings({'cacheEnabled': v}).ignore();
                         },
                       ),
+                      Divider(
+                          color: isDark
+                              ? Colors.white12
+                              : Colors.black12),
+                      _SwitchTile(
+                        label: 'Video Mode',
+                        subtitle: 'Prefer high-quality video playback',
+                        value: settings.value!.videoMode,
+                        cs: cs,
+                        isDark: isDark,
+                        onChanged: (v) {
+                          settings.value =
+                              settings.value!.copyWith(videoMode: v);
+                          api.updateSettings({'videoMode': v}).ignore();
+                          ref.read(playerProvider.notifier).fetchSettings();
+                        },
+                      ),
                     ],
                   ),
                 ),
               ),
+
+              // ── Invidious Playlists ──────────────────────────────────────────
+              if (settings.value!.invidiousUsername != null) ...[
+                _SectionHeader(label: 'YouTube Playlists', isDark: isDark, cs: cs),
+                SliverToBoxAdapter(
+                  child: _SettingsCard(
+                    isDark: isDark,
+                    cs: cs,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (plLoading.value)
+                          const Center(child: LinearProgressIndicator())
+                        else if (invPlaylists.value == null || invPlaylists.value!.isEmpty)
+                          const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Text('No playlists found', style: TextStyle(color: Colors.white24)),
+                            ),
+                          )
+                        else
+                          ...invPlaylists.value!.map((pl) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(pl['title'] ?? 'Playlist', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                            subtitle: Text('${pl['videoCount'] ?? 0} videos', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.sync_rounded),
+                              onPressed: () async {
+                                final sc = ScaffoldMessenger.of(context);
+                                try {
+                                  await api.syncInvidiousPlaylist(
+                                    pl['playlistId'],
+                                    instanceUrl: settings.value!.invidiousInstance,
+                                    sid: settings.value!.invidiousSid!,
+                                  );
+                                  sc.showSnackBar(const SnackBar(content: Text('Playlist synced to Library ✓')));
+                                } catch (e) {
+                                  sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+                                }
+                              },
+                            ),
+                          )),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('Refresh Playlists'),
+                            onPressed: loadInvidiousPlaylists,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               // ── ListenBrainz ─────────────────────────────────────────────
               _SectionHeader(
@@ -328,7 +524,44 @@ class SettingsScreen extends HookConsumerWidget {
   }
 }
 
-// ── Shared subwidgets ─────────────────────────────────────────────────────────
+class _InvidiousStatus extends StatelessWidget {
+  const _InvidiousStatus({
+    required this.isLoggedIn,
+    this.username,
+    required this.isDark,
+    required this.cs,
+  });
+
+  final bool isLoggedIn;
+  final String? username;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isLoggedIn ? 'Status: Logged in' : 'Status: Guest',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isLoggedIn ? Colors.greenAccent : cs.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
+        ),
+        if (isLoggedIn && username != null)
+          Text(
+            '@$username',
+            style: TextStyle(
+              fontSize: 12,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(

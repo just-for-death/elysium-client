@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
+import '../../core/models/models.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
 import '../../core/utils.dart';
@@ -29,6 +30,20 @@ class SearchScreen extends HookConsumerWidget {
     final loading = useState(false);
     final selectedGenre = useState<String?>(null);
     final controller = useTextEditingController();
+    final searchMode = useState<String>('invidious'); // 'itunes' or 'invidious'
+    final settings = useState<ElysiumSettings?>(null);
+
+    Future<void> loadSettings() async {
+      try {
+        final s = await api.getSettings();
+        settings.value = s;
+      } catch (_) {}
+    }
+
+    useEffect(() {
+      loadSettings();
+      return null;
+    }, [serverIp]);
 
     // Load trending on mount
     useEffect(() {
@@ -60,18 +75,46 @@ class SearchScreen extends HookConsumerWidget {
           () async {
             loading.value = true;
             try {
-              final data = await api.itunesSearch(query.value);
-              results.value = ((data['results'] as List<dynamic>? ?? [])
+              final instance = (settings.value?.invidiousInstance.isNotEmpty ?? false)
+                  ? settings.value!.invidiousInstance
+                  : 'https://yt.ikiagi.loseyourip.com';
+
+              if (searchMode.value == 'invidious') {
+                final tracks = await api.invidiousSearch(query.value,
+                    instanceUrl: instance);
+                results.value = tracks
                     .map((t) => {
-                          'id': t['trackId']?.toString() ?? '',
-                          'title': t['trackName'] ?? '—',
-                          'artist': t['artistName'] ?? '—',
-                          'artwork': (t['artworkUrl100'] as String?)
-                              ?.replaceAll('100x100bb', '400x400bb'),
-                          'url': t['previewUrl'],
+                          'id': t.id,
+                          'videoId': t.videoId,
+                          'title': t.title,
+                          'artist': t.artist,
+                          'artwork': t.artwork,
+                          'duration': t.duration,
                         })
-                    .toList())
-                  .cast();
+                    .toList()
+                    .cast();
+              } else {
+                // Fallback to iTunes search if Invidious is not configured or selected
+                final data = await api.itunesSearch(query.value);
+                results.value = ((data['results'] as List<dynamic>? ?? [])
+                      .map((t) => {
+                            'id': t['trackId']?.toString() ?? '',
+                            'title': t['trackName'] ?? '—',
+                            'artist': t['artistName'] ?? '—',
+                            'artwork': (t['artworkUrl100'] as String?)
+                                ?.replaceAll('100x100bb', '400x400bb'),
+                            'url': t['previewUrl'],
+                          })
+                      .toList())
+                    .cast();
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Search failed: $e')),
+                );
+              }
+              results.value = [];
             } finally {
               loading.value = false;
             }
@@ -108,10 +151,12 @@ class SearchScreen extends HookConsumerWidget {
       final tracks = source
           .map((r) => Track(
                 id: r['id'] ?? '',
+                videoId: r['videoId'],
                 title: r['title'] ?? '—',
                 artist: r['artist'] ?? '—',
                 artwork: r['artwork'],
                 url: r['url'] ?? '',
+                duration: r['duration'],
               ))
           .toList();
       ref.read(playerProvider.notifier).setQueue(tracks);
@@ -135,14 +180,25 @@ class SearchScreen extends HookConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Search',
-                    style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : cs.onSurface,
-                      letterSpacing: -0.5,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Search',
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w800,
+                          color: isDark ? Colors.white : cs.onSurface,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const Spacer(),
+                      _SearchModeToggle(
+                        mode: searchMode.value,
+                        onChanged: (m) => searchMode.value = m,
+                        isDark: isDark,
+                        cs: cs,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 14),
                   // Search box
@@ -350,3 +406,87 @@ class SearchScreen extends HookConsumerWidget {
             color: cs.primary.withValues(alpha: 0.4), size: 24),
       );
 }
+
+class _SearchModeToggle extends StatelessWidget {
+  const _SearchModeToggle({
+    required this.mode,
+    required this.onChanged,
+    required this.isDark,
+    required this.cs,
+  });
+
+  final String mode;
+  final void Function(String) onChanged;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleBtn(
+            label: 'YouTube',
+            isActive: mode == 'invidious',
+            onTap: () => onChanged('invidious'),
+            cs: cs,
+            isDark: isDark,
+          ),
+          _ToggleBtn(
+            label: 'iTunes',
+            isActive: mode == 'itunes',
+            onTap: () => onChanged('itunes'),
+            cs: cs,
+            isDark: isDark,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleBtn extends StatelessWidget {
+  const _ToggleBtn({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+    required this.cs,
+    required this.isDark,
+  });
+
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+  final ColorScheme cs;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isActive ? cs.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: isActive ? cs.onPrimary : (isDark ? Colors.white38 : Colors.black38),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
