@@ -2,6 +2,8 @@
 
 A pristine, native Flutter mobile client for the Elysium music architecture. Designed with absolute feature parity to the PWA interface, heavily leaning into platform-aware UI concepts like deep iOS glass-morphism and Android Material You aesthetics.
 
+> **Note**: This is the native mobile client repository. It requires the [Elysium Server](https://github.com/just-for-death/elysium) backend engine to function.
+
 ## Tech Stack
 - **Framework:** [Flutter](https://flutter.dev/) (Dart 3.x)
 - **State Management:** [Riverpod](https://riverpod.dev/) (`hooks_riverpod`)

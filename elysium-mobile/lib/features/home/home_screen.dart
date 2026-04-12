@@ -7,6 +7,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../core/api/elysium_api.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
+import '../../core/utils.dart';
 
 const _countries = [
   ('us', '🇺🇸 US'),
@@ -48,6 +49,7 @@ class HomeScreen extends HookConsumerWidget {
                   'title': e['im:name']?['label'] ?? '—',
                   'artist': e['im:artist']?['label'] ?? '—',
                   'artwork': e['im:image']?[2]?['label'],
+                  'url': extractItunesUrl(e['link']),
                 })
             .toList()
             .cast<Map<String, dynamic>>();
@@ -181,7 +183,7 @@ class HomeScreen extends HookConsumerWidget {
                                       title: t['title'] ?? '—',
                                       artist: t['artist'] ?? '—',
                                       artwork: t['artwork'],
-                                      url: '',
+                                      url: t['url'] ?? '',
                                     ))
                                 .toList();
                             ref

@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../core/api/elysium_api.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
+import '../../core/utils.dart';
 
 const _genres = [
   'Pop', 'Hip-Hop', 'R&B', 'Rock', 'Electronic',
@@ -39,6 +40,7 @@ class SearchScreen extends HookConsumerWidget {
                   'title': e['im:name']?['label'] ?? '—',
                   'artist': e['im:artist']?['label'] ?? '—',
                   'artwork': e['im:image']?[2]?['label'],
+                  'url': extractItunesUrl(e['link']),
                 })
             .toList()
             .cast();
