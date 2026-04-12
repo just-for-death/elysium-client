@@ -8,6 +8,7 @@ import '../../core/models/models.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
 import '../../core/utils.dart';
+import '../../core/widgets/glass_widgets.dart';
 
 const _genres = [
   'Pop', 'Hip-Hop', 'R&B', 'Rock', 'Electronic',
@@ -31,19 +32,7 @@ class SearchScreen extends HookConsumerWidget {
     final selectedGenre = useState<String?>(null);
     final controller = useTextEditingController();
     final searchMode = useState<String>('invidious'); // 'itunes' or 'invidious'
-    final settings = useState<ElysiumSettings?>(null);
-
-    Future<void> loadSettings() async {
-      try {
-        final s = await api.getSettings();
-        settings.value = s;
-      } catch (_) {}
-    }
-
-    useEffect(() {
-      loadSettings();
-      return null;
-    }, [serverIp]);
+    final settings = ref.watch(settingsProvider);
 
     // Load trending on mount
     useEffect(() {
@@ -75,8 +64,8 @@ class SearchScreen extends HookConsumerWidget {
           () async {
             loading.value = true;
             try {
-              final instance = (settings.value?.invidiousInstance.isNotEmpty ?? false)
-                  ? settings.value!.invidiousInstance
+              final instance = (settings?.invidiousInstance.isNotEmpty ?? false)
+                  ? settings!.invidiousInstance
                   : 'https://yt.ikiagi.loseyourip.com';
 
               if (searchMode.value == 'invidious') {
@@ -167,16 +156,15 @@ class SearchScreen extends HookConsumerWidget {
         query.value.trim().isNotEmpty || selectedGenre.value != null;
     final displayList = isSearching ? results.value : trending.value;
 
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF050505) : cs.surface,
-      body: SafeArea(
+    return PremiumBackground(
+      child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -186,9 +174,9 @@ class SearchScreen extends HookConsumerWidget {
                         'Search',
                         style: TextStyle(
                           fontSize: 34,
-                          fontWeight: FontWeight.w800,
-                          color: isDark ? Colors.white : cs.onSurface,
-                          letterSpacing: -0.5,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: -1,
                         ),
                       ),
                       const Spacer(),
@@ -200,52 +188,51 @@ class SearchScreen extends HookConsumerWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                   // Search box
-                  Container(
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        Icon(Icons.search_rounded,
-                            size: 20, color: cs.onSurfaceVariant),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: controller,
-                            onChanged: (v) {
-                              query.value = v;
-                              selectedGenre.value = null;
-                            },
-                            style: TextStyle(
-                                fontSize: 15, color: cs.onSurface),
-                            decoration: InputDecoration(
-                              hintText: 'Songs, artists, albums...',
-                              hintStyle:
-                                  TextStyle(color: cs.onSurfaceVariant),
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding:
-                                  const EdgeInsets.symmetric(vertical: 12),
+                  GlassCard(
+                    padding: EdgeInsets.zero,
+                    borderRadius: BorderRadius.circular(16),
+                    opacity: 0.08,
+                    child: Container(
+                      height: 52,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.search_rounded,
+                              size: 20, color: Colors.white.withValues(alpha: 0.5)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              onChanged: (v) {
+                                query.value = v;
+                                selectedGenre.value = null;
+                              },
+                              style: const TextStyle(
+                                  fontSize: 15, color: Colors.white),
+                              decoration: InputDecoration(
+                                hintText: 'Songs, artists, albums...',
+                                hintStyle: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.3)),
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
                             ),
                           ),
-                        ),
-                        if (query.value.isNotEmpty)
-                          IconButton(
-                            icon: Icon(Icons.cancel_rounded,
-                                size: 18, color: cs.onSurfaceVariant),
-                            onPressed: () {
-                              controller.clear();
-                              query.value = '';
-                              results.value = [];
-                              selectedGenre.value = null;
-                            },
-                          ),
-                      ],
+                          if (query.value.isNotEmpty)
+                            IconButton(
+                              icon: Icon(Icons.cancel_rounded,
+                                  size: 18, color: Colors.white.withValues(alpha: 0.5)),
+                              onPressed: () {
+                                controller.clear();
+                                query.value = '';
+                                results.value = [];
+                                selectedGenre.value = null;
+                              },
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -255,107 +242,90 @@ class SearchScreen extends HookConsumerWidget {
             // Genre chips
             if (!isSearching) ...[
               Padding(
-                padding: const EdgeInsets.only(left: 20, bottom: 10),
+                padding: const EdgeInsets.only(left: 24, bottom: 12),
                 child: Text(
                   'BROWSE BY GENRE',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.4)
-                        : cs.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                    color: Colors.white.withValues(alpha: 0.4),
                   ),
                 ),
               ),
               SizedBox(
-                height: 38,
+                height: 48,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   itemCount: _genres.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemBuilder: (context, i) {
-                    return GestureDetector(
+                    return GlassPill(
+                      label: _genres[i],
+                      selected: selectedGenre.value == _genres[i],
                       onTap: () => searchGenre(_genres[i]),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          _genres[i],
-                          style: TextStyle(
-                            color: cs.onPrimaryContainer,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
                     );
                   },
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               Padding(
-                padding: const EdgeInsets.only(left: 20, bottom: 8),
+                padding: const EdgeInsets.only(left: 24, bottom: 12),
                 child: Text(
                   'TRENDING NOW',
                   style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.4)
-                        : cs.onSurfaceVariant,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                    color: Colors.white.withValues(alpha: 0.4),
                   ),
                 ),
               ),
             ],
 
             // Results list
-            Expanded(
-              child: loading.value
+        Expanded(
+          child: loading.value
+              ? Center(
+                  child: CircularProgressIndicator(color: cs.primary))
+              : displayList.isEmpty && isSearching
                   ? Center(
-                      child:
-                          CircularProgressIndicator(color: cs.primary))
-                  : displayList.isEmpty && isSearching
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.music_off_rounded,
-                                  size: 52,
-                                  color: cs.onSurfaceVariant
-                                      .withValues(alpha: 0.3)),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No results found',
-                                style: TextStyle(
-                                    color: cs.onSurfaceVariant
-                                        .withValues(alpha: 0.5)),
-                              ),
-                            ],
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.music_off_rounded,
+                              size: 52,
+                              color: Colors.white.withValues(alpha: 0.2)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No results found',
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.4)),
                           ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 160),
-                          itemCount: displayList.length,
-                          itemBuilder: (context, index) {
-                            final item = displayList[index];
-                            return ListTile(
-                              contentPadding:
-                                  const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 4),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 160),
+                      itemCount: displayList.length,
+                      itemBuilder: (context, index) {
+                        final item = displayList[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: GlassCard(
+                            opacity: 0.04,
+                            borderRadius: BorderRadius.circular(16),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 2),
                               leading: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: item['artwork'] != null
                                     ? CachedNetworkImage(
                                         imageUrl: item['artwork']!,
-                                        width: 52,
-                                        height: 52,
+                                        width: 48,
+                                        height: 48,
                                         fit: BoxFit.cover,
                                         errorWidget: (_, __, ___) =>
                                             _placeholder(cs),
@@ -366,12 +336,10 @@ class SearchScreen extends HookConsumerWidget {
                                 item['title'] ?? '—',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: isDark
-                                      ? Colors.white
-                                      : cs.onSurface,
+                                  color: Colors.white,
                                 ),
                               ),
                               subtitle: Text(
@@ -380,18 +348,17 @@ class SearchScreen extends HookConsumerWidget {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                     fontSize: 12,
-                                    color: cs.onSurfaceVariant),
+                                    color: Colors.white.withValues(alpha: 0.5)),
                               ),
-                              trailing: Icon(
-                                  Icons.play_circle_outline_rounded,
-                                  color: cs.primary,
-                                  size: 28),
-                              onTap: () =>
-                                  playResult(displayList, index),
-                            );
-                          },
-                        ),
-            ),
+                              trailing: Icon(Icons.play_circle_fill_rounded,
+                                  color: cs.primary, size: 28),
+                              onTap: () => playResult(displayList, index),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+        ),
           ],
         ),
       ),

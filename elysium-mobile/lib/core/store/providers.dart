@@ -38,6 +38,41 @@ class ServerIpNotifier extends StateNotifier<String> {
   }
 }
 
+// ── Settings provider ────────────────────────────────────────────────────────
+final settingsProvider =
+    StateNotifierProvider<SettingsNotifier, ElysiumSettings?>((ref) {
+  return SettingsNotifier(ref);
+});
+
+class SettingsNotifier extends StateNotifier<ElysiumSettings?> {
+  final Ref _ref;
+  SettingsNotifier(this._ref) : super(null) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    final serverIp = _ref.watch(serverIpProvider);
+    if (serverIp.isEmpty) return;
+    try {
+      final s = await ElysiumApi(serverIp).getSettings();
+      state = s;
+    } catch (_) {}
+  }
+
+  Future<void> update(Map<String, dynamic> json) async {
+    final serverIp = _ref.read(serverIpProvider);
+    final api = ElysiumApi(serverIp, apiSecret: state?.apiSecret ?? '');
+    try {
+      final updated = await api.updateSettings(json);
+      state = updated;
+    } catch (_) {
+      rethrow;
+    }
+  }
+
+  void refresh() => _init();
+}
+
 // ── Player state ──────────────────────────────────────────────────────────────
 enum ElysiumRepeatMode { off, all, one }
 
@@ -105,13 +140,18 @@ final playerProvider =
 class PlayerNotifier extends StateNotifier<PlayerState> {
   late final Player _player;
   final Ref _ref;
+  int _playVersion = 0;
 
   PlayerNotifier(this._ref) : super(const PlayerState()) {
     _player = Player();
     _listenToPlayer();
   }
 
-  ElysiumApi get _api => ElysiumApi(_ref.read(serverIpProvider));
+  ElysiumApi get _api {
+    final serverIp = _ref.read(serverIpProvider);
+    final settings = _ref.read(settingsProvider);
+    return ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? '');
+  }
 
   Player get player => _player;
 
@@ -147,14 +187,17 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
   }
   Future<void> fetchSettings() async {
-    final s = await _api.getSettings();
-    state = state.copyWith(videoMode: s.videoMode);
+    await _ref.read(settingsProvider.notifier)._init();
+    final s = _ref.read(settingsProvider);
+    if (s != null) {
+      state = state.copyWith(videoMode: s.videoMode);
+    }
   }
 
   Future<void> toggleVideoMode() async {
     final newMode = !state.videoMode;
     state = state.copyWith(videoMode: newMode);
-    await _api.updateSettings({'videoMode': newMode});
+    await _ref.read(settingsProvider.notifier).update({'videoMode': newMode});
     // If playing, re-resolve for new format
     if (state.currentIndex != -1) {
       await playIndex(state.currentIndex);
@@ -198,30 +241,33 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   Future<void> playIndex(int index) async {
     if (index < 0 || index >= state.queue.length) return;
+    
+    final version = ++_playVersion;
     state = state.copyWith(currentIndex: index);
     final track = state.queue[index];
 
     try {
       String? playUrl = track.url;
-      final settings = await _api.getSettings();
+      final settings = _ref.read(settingsProvider) ?? await _api.getSettings();
+      if (version != _playVersion) return;
+
       state = state.copyWith(videoMode: settings.videoMode);
-      
+      final api = _api; // Uses current settings/secret
+
       final instance = settings.invidiousInstance.isNotEmpty 
           ? settings.invidiousInstance 
           : 'https://yt.ikiagi.loseyourip.com';
 
       // ── Stream Resolution Logic ───────────────────────────────────────────
       if (track.videoId != null) {
-        final details = await _api.getVideoDetails(track.videoId!,
+        final details = await api.getVideoDetails(track.videoId!,
             instanceUrl: instance, sid: settings.invidiousSid);
-        
+        if (version != _playVersion) return;
+
         final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
         dynamic bestFormat;
         
         if (state.videoMode) {
-          // Prefer high-quality video formats (MP4 usually has audio+video combined in some cases, 
-          // but adaptive usually separates them. media_kit can handle muxing if we provide both, 
-          // but for simplicity we'll look for the non-adaptive 'format' or best adaptive video)
           bestFormat = formats.firstWhere(
             (f) => (f['type']?.toString().contains('video/') ?? false) && f['videoOnly'] != true,
             orElse: () => formats.firstWhere(
@@ -240,14 +286,16 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           playUrl = bestFormat['url'];
         }
       } else if (playUrl != null && (playUrl.contains('apple.com') || playUrl.contains('itunes'))) {
-        final results = await _api.invidiousSearch('${track.artist} ${track.title} official audio',
+        final results = await api.invidiousSearch('${track.artist} ${track.title} official audio',
             instanceUrl: instance);
-        
+        if (version != _playVersion) return;
+
         if (results.isNotEmpty) {
           final match = results.first;
-          final details = await _api.getVideoDetails(match.id,
+          final details = await api.getVideoDetails(match.id,
               instanceUrl: instance, sid: settings.invidiousSid);
-          
+          if (version != _playVersion) return;
+
           final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
           final bestFormat = formats.firstWhere(
             (f) => f['type']?.toString().startsWith('audio/') ?? false,
@@ -260,10 +308,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         }
       }
 
-      if (playUrl != null && playUrl.isNotEmpty) {
+      if (playUrl != null && playUrl.isNotEmpty && version == _playVersion) {
         await _player.open(Media(playUrl));
       }
     } catch (e) {
+      if (version != _playVersion) return;
       print('Playback error: $e');
       if (track.url != null) {
         await _player.open(Media(track.url!));

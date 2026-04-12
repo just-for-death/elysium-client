@@ -13,13 +13,12 @@ class SettingsScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final serverIp = ref.watch(serverIpProvider);
-    final api = useMemoized(() => ElysiumApi(serverIp), [serverIp]);
+    final settings = ref.watch(settingsProvider);
+    final api = useMemoized(() => ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? ''), [serverIp, settings?.apiSecret]);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final serverCtrl = useTextEditingController(text: serverIp);
-    final settings = useState<ElysiumSettings?>(null);
-    final loading = useState(true);
     final saving = useState(false);
 
     // Server-side settings controllers
@@ -29,6 +28,7 @@ class SettingsScreen extends HookConsumerWidget {
     final ollamaModelCtrl = useTextEditingController();
     final invidiousInstanceCtrl = useTextEditingController();
     final lastFmKeyCtrl = useTextEditingController();
+    final apiSecretCtrl = useTextEditingController();
 
     // Login controllers
     final invUserCtrl = useTextEditingController();
@@ -36,89 +36,93 @@ class SettingsScreen extends HookConsumerWidget {
 
     // Playlist sync state
     final invPlaylists = useState<List<dynamic>?>(null);
+    final lbPlaylists = useState<List<dynamic>?>(null);
     final plLoading = useState(false);
+    final lbLoading = useState(false);
 
-    final errorMsg = useState<String?>(null);
-
-    Future<void> loadSettings() async {
-      if (serverIp.isEmpty) return;
-      loading.value = true;
-      errorMsg.value = null;
-      try {
-        final s = await api.getSettings();
-        settings.value = s;
-        lbTokenCtrl.text = s.listenBrainzToken;
-        lbUserCtrl.text = s.listenBrainzUsername;
-        ollamaUrlCtrl.text = s.ollamaUrl;
-        ollamaModelCtrl.text = s.ollamaModel;
-        invidiousInstanceCtrl.text = s.invidiousInstance;
-        lastFmKeyCtrl.text = s.lastFmApiKey;
-      } catch (e) {
-        settings.value = null;
-        errorMsg.value = e.toString().replaceFirst('Exception: ', '');
-      } finally {
-        loading.value = false;
+    // Sync controllers with remote state
+    useEffect(() {
+      if (settings != null) {
+        lbTokenCtrl.text = settings.listenBrainzToken;
+        lbUserCtrl.text = settings.listenBrainzUsername ?? '';
+        ollamaUrlCtrl.text = settings.ollamaUrl;
+        ollamaModelCtrl.text = settings.ollamaModel;
+        invidiousInstanceCtrl.text = settings.invidiousInstance;
+        lastFmKeyCtrl.text = settings.lastFmApiKey;
+        apiSecretCtrl.text = settings.apiSecret;
       }
-    }
+      return null;
+    }, [settings]);
 
     Future<void> loadInvidiousPlaylists() async {
-      if (serverIp.isEmpty) return;
-      if (settings.value?.invidiousUsername == null || 
-          settings.value?.invidiousInstance.isEmpty == true) {
-        invPlaylists.value = null;
-        return;
-      }
+      if (settings?.invidiousUsername == null) return;
       plLoading.value = true;
       try {
-        final pl = await api.getInvidiousPlaylists(
-          instanceUrl: settings.value!.invidiousInstance,
-          sid: settings.value?.invidiousSid,
+        final data = await api.getInvidiousPlaylists(
+          instanceUrl: settings!.invidiousInstance,
+          sid: settings.invidiousSid,
         );
-        invPlaylists.value = pl;
-      } catch (e) {
-        invPlaylists.value = null;
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not fetch playlists: $e')),
-          );
-        }
+        invPlaylists.value = data;
+      } catch (_) {
+        invPlaylists.value = [];
       } finally {
         plLoading.value = false;
       }
     }
 
+    Future<void> loadListenBrainzPlaylists() async {
+      if (settings?.listenBrainzUsername == null) return;
+      lbLoading.value = true;
+      try {
+        final data = await api.getListenBrainzPlaylists();
+        lbPlaylists.value = data;
+      } catch (_) {
+        lbPlaylists.value = [];
+      } finally {
+        lbLoading.value = false;
+      }
+    }
+
     useEffect(() {
-      loadSettings().then((_) => loadInvidiousPlaylists());
+      if (settings != null) {
+        loadInvidiousPlaylists();
+        loadListenBrainzPlaylists();
+      }
       return null;
-    }, [serverIp]);
+    }, [settings?.invidiousSid, settings?.listenBrainzUsername]);
 
     Future<void> saveServerSettings() async {
-      if (settings.value == null) return;
+      if (settings == null) return;
       saving.value = true;
       try {
         final instance = invidiousInstanceCtrl.text.trim();
         final sanitizedInstance = instance.isNotEmpty ? Uri.parse(instance).origin : '';
 
-        final updated = await api.updateSettings({
-          ...settings.value!.toJson(),
+        await ref.read(settingsProvider.notifier).update({
+          ...settings.toJson(),
           'listenBrainzToken': lbTokenCtrl.text.trim(),
           'listenBrainzUsername': lbUserCtrl.text.trim(),
           'ollamaUrl': ollamaUrlCtrl.text.trim(),
           'ollamaModel': ollamaModelCtrl.text.trim(),
           'invidiousInstance': sanitizedInstance,
           'lastFmApiKey': lastFmKeyCtrl.text.trim(),
+          'apiSecret': apiSecretCtrl.text.trim(),
         });
-        invidiousInstanceCtrl.text = sanitizedInstance;
-        settings.value = updated;
         
         // Auto-validate LB if token changed
-        if (lbTokenCtrl.text.trim().isNotEmpty) {
+        if (lbTokenCtrl.text.trim().isNotEmpty && lbTokenCtrl.text.trim() != settings.listenBrainzToken) {
           try {
             final lb = await api.validateListenBrainzToken(lbTokenCtrl.text.trim());
             if (lb['username'] != null) {
-              lbUserCtrl.text = lb['username'];
-              await api.updateSettings({'listenBrainzUsername': lb['username']});
+              await ref.read(settingsProvider.notifier).update({'listenBrainzUsername': lb['username']});
             }
+          } catch (_) {}
+        }
+
+        // Auto-validate Last.fm
+        if (lastFmKeyCtrl.text.trim().isNotEmpty) {
+          try {
+            await api.validateLastFmKey(lastFmKeyCtrl.text.trim());
           } catch (_) {}
         }
 
@@ -136,6 +140,105 @@ class SettingsScreen extends HookConsumerWidget {
       } finally {
         saving.value = false;
       }
+    }
+
+    void showListenBrainzPlaylistPreview(String mbid, String title) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => HookConsumer(
+          builder: (context, ref, _) {
+            final pvLoading = useState(true);
+            final pvPlaylist = useState<Playlist?>(null);
+
+            useEffect(() {
+              api.getListenBrainzPlaylistDetail(mbid).then((p) {
+                pvPlaylist.value = p;
+                pvLoading.value = false;
+              }).catchError((e) {
+                pvLoading.value = false;
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+              });
+              return null;
+            }, []);
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              builder: (_, scrollCtrl) => Container(
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F0F0F) : Colors.white,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: pvLoading.value 
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView.builder(
+                            controller: scrollCtrl,
+                            itemCount: pvPlaylist.value?.videos.length ?? 0,
+                            itemBuilder: (context, i) {
+                              final t = pvPlaylist.value!.videos[i];
+                              return ListTile(
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(color: Colors.white12, width: 44, height: 44, child: const Icon(Icons.music_note_rounded)),
+                                ),
+                                title: Text(t.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
+                                subtitle: Text(t.artist, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                                onTap: () => ref.read(playerProvider.notifier).playTrackNow(t),
+                              );
+                            },
+                          ),
+                    ),
+                    if (!pvLoading.value && pvPlaylist.value != null)
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.cloud_download_rounded),
+                            label: const Text('Import to Elysium Library'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              try {
+                                await api.importListenBrainzPlaylist(mbid);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Playlist imported to library ✓')));
+                                }
+                              } catch (e) {
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
     }
 
     void showTrackMenu(Track track) {
@@ -284,7 +387,7 @@ class SettingsScreen extends HookConsumerWidget {
     }
 
     Future<void> loginToInvidious() async {
-      if (settings.value == null) return;
+      if (settings == null) return;
       final instance = invidiousInstanceCtrl.text.trim();
       if (instance.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -316,24 +419,22 @@ class SettingsScreen extends HookConsumerWidget {
                 final user = invUserCtrl.text;
                 final pass = invPassCtrl.text;
                 Navigator.pop(ctx);
-                loading.value = true;
+                saving.value = true;
                 try {
                   final res = await api.invidiousLogin(instance, user, pass);
                   if (res['sid'] != null) {
-                    await api.updateSettings({
+                    await ref.read(settingsProvider.notifier).update({
                       'invidiousSid': res['sid'],
                       'invidiousUsername': user,
                       'invidiousInstance': sanitizedInstance,
                     });
-                    await loadSettings();
-                    await loadInvidiousPlaylists();
                   }
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
                   }
                 } finally {
-                  loading.value = false;
+                  saving.value = false;
                 }
               },
               child: const Text('Login'),
@@ -343,58 +444,108 @@ class SettingsScreen extends HookConsumerWidget {
       );
     }
 
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF050505) : cs.surface,
-      body: SafeArea(
+    return PremiumBackground(
+      child: SafeArea(
         bottom: false,
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                child: Text(
-                  'Settings',
-                  style: TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : cs.onSurface,
-                    letterSpacing: -0.5,
-                  ),
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Settings',
+                      style: TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: -1,
+                      ),
+                    ),
+                    Text(
+                      'Universal platform configuration',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            if (settings.value != null) ...[
-              // ── AUTO QUEUE ───────────────────────────────────────────────
-              _SectionHeader(label: 'Auto Queue', isDark: isDark, cs: cs),
+            if (settings != null) ...[
+              // ── SECURITY & CONNECTION ──────────────────────────────────
+              _SectionHeader(label: 'Security & Connectivity', icon: Icons.security_rounded, isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
                   cs: cs,
+                  accent: Colors.tealAccent,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SettingsLabel('ELSYIUM SERVER IP', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(
+                        controller: serverCtrl, 
+                        hint: 'e.g. 192.168.1.10:3000', 
+                        isDark: isDark, 
+                        cs: cs,
+                        onChanged: (v) => ref.read(serverIpProvider.notifier).state = v.trim(),
+                      ),
+                      const SizedBox(height: 16),
+                      _SettingsLabel('API SECRET', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(
+                        controller: apiSecretCtrl, 
+                        hint: 'Required if your server is protected', 
+                        isDark: isDark, 
+                        cs: cs, 
+                        obscure: true,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'This must match the API_SECRET on your server.',
+                        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── AUTO QUEUE ───────────────────────────────────────────────
+              _SectionHeader(label: 'Smart Queue', icon: Icons.auto_awesome_rounded, isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  accent: cs.primary,
                   child: Column(
                     children: [
                       _SwitchTile(
                         label: 'Auto Queue',
                         subtitle: 'Automatically queue the next track when one is about to end',
-                        value: settings.value!.ollamaEnabled,
+                        value: settings.ollamaEnabled,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value = settings.value!.copyWith(ollamaEnabled: v);
-                          api.updateSettings({'ollamaEnabled': v}).ignore();
+                          ref.read(settingsProvider.notifier).update({'ollamaEnabled': v});
                         },
                       ),
-                      if (settings.value!.ollamaEnabled) ...[
+                      if (settings.ollamaEnabled) ...[
                         const SizedBox(height: 16),
                         _SettingsLabel('QUEUE MODE', cs),
                         const SizedBox(height: 8),
                         _QueueModeSelector(
-                          currentMode: settings.value!.queueMode,
+                          currentMode: settings.queueMode,
                           isDark: isDark,
                           cs: cs,
                           onChanged: (mode) {
-                            settings.value = settings.value!.copyWith(queueMode: mode);
-                            api.updateSettings({'queueMode': mode}).ignore();
+                            ref.read(settingsProvider.notifier).update({'queueMode': mode});
                           },
                         ),
                       ],
@@ -405,11 +556,12 @@ class SettingsScreen extends HookConsumerWidget {
 
               // ── OLLAMA ENGINE ───────────────────────────────────────────
               if (settings.value!.queueMode == 'my_taste') ...[
-                _SectionHeader(label: 'Ollama — AI Engine', isDark: isDark, cs: cs),
+                _SectionHeader(label: 'AI Engine', icon: Icons.memory_rounded, isDark: isDark, cs: cs),
                 SliverToBoxAdapter(
                   child: _SettingsCard(
                     isDark: isDark,
                     cs: cs,
+                    accent: Colors.blueAccent,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -427,15 +579,26 @@ class SettingsScreen extends HookConsumerWidget {
               ],
 
               // ── LAST.FM ───────────────────────────────────────────────────
-              _SectionHeader(label: 'Last.fm Plugin', isDark: isDark, cs: cs),
+              _SectionHeader(label: 'Scrobbling Plugin', icon: Icons.sensors_rounded, isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
                   cs: cs,
+                  accent: const Color(0xFFD41113), // Last.fm Red
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _SettingsLabel('API KEY (OPTIONAL FALLBACK)', cs),
+                      Row(
+                        children: [
+                          Expanded(child: _SettingsLabel('API KEY (OPTIONAL FALLBACK)', cs)),
+                          if (settings.value!.lastFmApiKey.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
+                              child: const Text('STATUS: CONNECTED', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
                       _StyledTextField(controller: lastFmKeyCtrl, hint: 'Paste your Last.fm API key', isDark: isDark, cs: cs, obscure: true),
                       const SizedBox(height: 4),
@@ -449,11 +612,12 @@ class SettingsScreen extends HookConsumerWidget {
               ),
 
               // ── INVIDIOUS ───────────────────────────────────────────────────
-              _SectionHeader(label: 'Invidious Account', isDark: isDark, cs: cs),
+              _SectionHeader(label: 'Video Account', icon: Icons.video_library_rounded, isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
                   cs: cs,
+                  accent: Colors.red,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -503,11 +667,12 @@ class SettingsScreen extends HookConsumerWidget {
               ),
 
               // ── SCROBBLING ─────────────────────────────────────
-              _SectionHeader(label: 'Scrobbling', isDark: isDark, cs: cs),
+              _SectionHeader(label: 'Music Social', icon: Icons.album_rounded, isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
                   cs: cs,
+                  accent: const Color(0xFFEB743B), // ListenBrainz Orange
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -518,13 +683,105 @@ class SettingsScreen extends HookConsumerWidget {
                       _SettingsLabel('USERNAME (AUTO-DETECTED)', cs),
                       const SizedBox(height: 8),
                       _StyledTextField(controller: lbUserCtrl, hint: 'your_username', isDark: isDark, cs: cs),
+
+                      if (settings.value!.listenBrainzUsername != null && settings.value!.listenBrainzUsername!.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        _SettingsLabel('LISTENBRAINZ TOOLS', cs),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ToolButton(
+                                label: 'Sync to LB',
+                                icon: Icons.cloud_upload_rounded,
+                                isDark: isDark,
+                                cs: cs,
+                                onTap: () async {
+                                  final sc = ScaffoldMessenger.of(context);
+                                  sc.showSnackBar(const SnackBar(content: Text('Fetching local playlists...')));
+                                  try {
+                                    final localPl = await api.getPlaylists();
+                                    if (localPl.isEmpty) {
+                                      sc.showSnackBar(const SnackBar(content: Text('No local playlists to sync')));
+                                      return;
+                                    }
+                                    sc.showSnackBar(SnackBar(content: Text('Starting sync of ${localPl.length} playlists...')));
+                                    int success = 0;
+                                    for (final p in localPl) {
+                                      try {
+                                        await api.syncPlaylistToListenBrainz(p.id);
+                                        success++;
+                                      } catch (_) {}
+                                    }
+                                    sc.showSnackBar(SnackBar(content: Text('Synced $success playlists to ListenBrainz ✓')));
+                                  } catch (e) {
+                                    sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _ToolButton(
+                                label: 'Bulk Scrobble',
+                                icon: Icons.history_edu_rounded,
+                                isDark: isDark,
+                                cs: cs,
+                                onTap: () async {
+                                  final sc = ScaffoldMessenger.of(context);
+                                  sc.showSnackBar(const SnackBar(content: Text('Fetching history...')));
+                                  try {
+                                    final history = await api.getHistory();
+                                    if (history.isEmpty) {
+                                      sc.showSnackBar(const SnackBar(content: Text('History is empty')));
+                                      return;
+                                    }
+                                    sc.showSnackBar(const SnackBar(content: Text('Importing history to ListenBrainz...')));
+                                    await api.bulkScrobble(history);
+                                    sc.showSnackBar(const SnackBar(content: Text('History scrobbled successfully ✓')));
+                                  } catch (e) {
+                                    sc.showSnackBar(SnackBar(content: Text('Bulk scrobble failed: $e')));
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        _SettingsLabel('LISTENBRAINZ PLAYLISTS', cs),
+                        const SizedBox(height: 8),
+                        if (lbLoading.value)
+                          const Center(child: Padding(padding: EdgeInsets.all(12.0), child: LinearProgressIndicator()))
+                        else if (lbPlaylists.value == null || lbPlaylists.value!.isEmpty)
+                          const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('No LB playlists found', style: TextStyle(color: Colors.white24, fontSize: 13))))
+                        else
+                          ...lbPlaylists.value!.map((pl) => _PlaylistSyncTile(
+                            title: pl['title'] ?? 'Playlist',
+                            count: pl['track_count'] ?? 0,
+                            isDark: isDark,
+                            cs: cs,
+                            onSync: () async {
+                               final sc = ScaffoldMessenger.of(context);
+                               sc.showSnackBar(const SnackBar(content: Text('Syncing to Library...')));
+                               try {
+                                 await api.importListenBrainzPlaylist(pl['playlist_mbid']);
+                                 sc.showSnackBar(const SnackBar(content: Text('Synced to Library ✓')));
+                               } catch (e) {
+                                 sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+                               }
+                            },
+                            onTap: () => showListenBrainzPlaylistPreview(pl['playlist_mbid'], pl['title'] ?? 'Playlist'), 
+                          )),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: TextButton.icon(icon: const Icon(Icons.refresh_rounded, size: 18), label: const Text('Refresh LB List'), onPressed: loadListenBrainzPlaylists)),
+                      ],
                     ],
                   ),
                 ),
               ),
 
               // ── PLAYER ───────────────────────────────────────────────────
-              _SectionHeader(label: 'Player', isDark: isDark, cs: cs),
+              _SectionHeader(label: 'Experience', icon: Icons.tune_rounded, isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
@@ -534,36 +791,33 @@ class SettingsScreen extends HookConsumerWidget {
                       _SwitchTile(
                         label: 'High Quality Audio',
                         subtitle: 'Stream higher bitrate when available',
-                        value: settings.value!.highQuality,
+                        value: settings.highQuality,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value = settings.value!.copyWith(highQuality: v);
-                          api.updateSettings({'highQuality': v}).ignore();
+                          ref.read(settingsProvider.notifier).update({'highQuality': v});
                         },
                       ),
-                      Divider(color: isDark ? Colors.white12 : Colors.black12),
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))),
                       _SwitchTile(
                         label: 'Cache Audio',
                         subtitle: 'Save tracks for offline listening',
-                        value: settings.value!.cacheEnabled,
+                        value: settings.cacheEnabled,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value = settings.value!.copyWith(cacheEnabled: v);
-                          api.updateSettings({'cacheEnabled': v}).ignore();
+                          ref.read(settingsProvider.notifier).update({'cacheEnabled': v});
                         },
                       ),
-                      Divider(color: isDark ? Colors.white12 : Colors.black12),
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))),
                       _SwitchTile(
                         label: 'Video Mode',
                         subtitle: 'Prefer high-quality video playback',
-                        value: settings.value!.videoMode,
+                        value: settings.videoMode,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value = settings.value!.copyWith(videoMode: v);
-                          api.updateSettings({'videoMode': v}).ignore();
+                          ref.read(settingsProvider.notifier).update({'videoMode': v});
                           ref.read(playerProvider.notifier).fetchSettings();
                         },
                       ),
@@ -573,11 +827,12 @@ class SettingsScreen extends HookConsumerWidget {
               ),
 
               // ── SYSTEM ───────────────────────────────────────────────────
-              _SectionHeader(label: 'System', isDark: isDark, cs: cs),
+              _SectionHeader(label: 'Connection', icon: Icons.dns_rounded, isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
                   cs: cs,
+                  accent: cs.secondary,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -605,18 +860,31 @@ class SettingsScreen extends HookConsumerWidget {
               // Save button
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
-                  child: ElevatedButton.icon(
-                    icon: saving.value ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_rounded),
-                    label: Text(saving.value ? 'Syncing...' : 'Save & Sync Settings'),
+                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 60),
+                  child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      minimumSize: const Size(double.infinity, 52),
+                      backgroundColor: isDark ? Colors.white : Colors.black,
+                      foregroundColor: isDark ? Colors.black : Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      elevation: 8,
+                      shadowColor: cs.primary.withValues(alpha: 0.2),
                     ),
                     onPressed: saving.value ? null : saveServerSettings,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (saving.value)
+                          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                        else
+                           Icon(Icons.bolt_rounded, size: 20, color: isDark ? Colors.black : Colors.white),
+                        const SizedBox(width: 12),
+                        Text(
+                          saving.value ? 'SYNCING CONFIG...' : 'APPLY CLOUD SETTINGS',
+                          style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 14),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -647,9 +915,9 @@ class SettingsScreen extends HookConsumerWidget {
                           ),
                         ),
                       ] else ...[
-                        Icon(Icons.cloud_off_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                        Icon(Icons.cloud_off_rounded, size: 48, color: Colors.white.withValues(alpha: 0.2)),
                         const SizedBox(height: 16),
-                        Text('Enter a server URL below to connect.', textAlign: TextAlign.center, style: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                        Text('Unable to connect to server.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
                       ],
                       const SizedBox(height: 32),
                       _SettingsCard(
@@ -826,22 +1094,29 @@ class _InvidiousStatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
+        color: isLoggedIn ? Colors.red.withValues(alpha: 0.05) : (isDark ? Colors.white.withValues(alpha: 0.02) : cs.surfaceContainerHigh),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isLoggedIn ? Colors.greenAccent.withValues(alpha: 0.3) : Colors.transparent,
+          color: isLoggedIn ? Colors.red.withValues(alpha: 0.2) : (isDark ? Colors.white10 : Colors.black12),
         ),
       ),
       child: Row(
         children: [
-          Icon(
-            isLoggedIn ? Icons.account_circle_rounded : Icons.account_circle_outlined,
-            size: 32,
-            color: isLoggedIn ? Colors.greenAccent : cs.onSurfaceVariant.withValues(alpha: 0.5),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isLoggedIn ? Colors.red : cs.surfaceContainerHighest,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isLoggedIn ? Icons.account_circle_rounded : Icons.account_circle_outlined,
+              size: 24,
+              color: isLoggedIn ? Colors.white : cs.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -849,9 +1124,9 @@ class _InvidiousStatusCard extends StatelessWidget {
                 Text(
                   isLoggedIn ? '@$username' : 'Guest Mode',
                   style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: isLoggedIn ? Colors.white : cs.onSurfaceVariant,
-                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: isDark ? Colors.white : cs.onSurface,
+                    fontSize: 16,
                   ),
                 ),
                 Text(
@@ -864,8 +1139,15 @@ class _InvidiousStatusCard extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: onLogin,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isLoggedIn ? Colors.red : cs.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
             child: Text(isLoggedIn ? 'Switch' : 'Login'),
           ),
         ],
@@ -896,15 +1178,17 @@ class _PlaylistSyncTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: isDark ? Colors.white10 : Colors.black12)),
+        color: isDark ? Colors.white.withValues(alpha: 0.02) : Colors.black.withValues(alpha: 0.02),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
         onTap: onTap,
-        contentPadding: EdgeInsets.zero,
-        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-        subtitle: Text('$count videos', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        dense: true,
+        contentPadding: const EdgeInsets.only(left: 12, right: 4),
+        title: Text(title, style: TextStyle(color: isDark ? Colors.white : cs.onSurface, fontSize: 13, fontWeight: FontWeight.w700)),
+        subtitle: Text('$count tracks', style: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 11)),
         trailing: IconButton(
-          icon: const Icon(Icons.sync_rounded, size: 20, color: Colors.white60),
+          icon: Icon(Icons.sync_rounded, size: 20, color: cs.primary),
           onPressed: onSync,
         ),
       ),
@@ -913,8 +1197,9 @@ class _PlaylistSyncTile extends StatelessWidget {
 }
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label, required this.isDark, required this.cs});
+  const _SectionHeader({required this.label, required this.icon, required this.isDark, required this.cs});
   final String label;
+  final IconData icon;
   final bool isDark;
   final ColorScheme cs;
 
@@ -922,15 +1207,21 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
-        child: Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1,
-            color: isDark ? Colors.white.withValues(alpha: 0.4) : cs.onSurfaceVariant,
-          ),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: isDark ? cs.primary : cs.primary),
+            const SizedBox(width: 8),
+            Text(
+              label.toUpperCase(),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+                color: isDark ? Colors.white.withValues(alpha: 0.5) : cs.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -938,25 +1229,48 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _SettingsCard extends StatelessWidget {
-  const _SettingsCard({required this.child, required this.isDark, required this.cs});
+  const _SettingsCard({required this.child, required this.isDark, required this.cs, this.accent});
   final Widget child;
   final bool isDark;
   final ColorScheme cs;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withValues(alpha: 0.05) : cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
-          width: 0.5,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          if (!isDark) BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withValues(alpha: 0.03) : Colors.white.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: accent?.withValues(alpha: 0.3) ?? (isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.05)),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (accent != null) 
+                Container(
+                  width: 40, height: 3, 
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(2)),
+                ),
+              child,
+            ],
+          ),
         ),
       ),
-      child: child,
     );
   }
 }
@@ -988,18 +1302,33 @@ class _StyledTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      style: TextStyle(color: isDark ? Colors.white : cs.onSurface, fontSize: 15),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
-        filled: true,
-        fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : cs.surfaceContainerHigh,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        isDense: true,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          if (isDark) BoxShadow(color: cs.primary.withValues(alpha: 0.05), blurRadius: 4, spreadRadius: -2),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        style: TextStyle(color: isDark ? Colors.white : cs.onSurface, fontSize: 15, fontWeight: FontWeight.w500),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+          filled: true,
+          fillColor: isDark ? Colors.white.withValues(alpha: 0.04) : cs.surfaceContainerHighest.withValues(alpha: 0.3),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: isDark ? Colors.white10 : cs.outlineVariant.withValues(alpha: 0.5), width: 1),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5), width: 1.5),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          isDense: true,
+        ),
       ),
     );
   }
@@ -1036,6 +1365,55 @@ class _SwitchTile extends StatelessWidget {
         ),
         Switch(value: value, onChanged: onChanged, activeThumbColor: cs.primary),
       ],
+    );
+  }
+}
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    required this.isDark,
+    required this.cs,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 24, color: isDark ? Colors.white : cs.primary),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white70 : cs.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

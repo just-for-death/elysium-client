@@ -9,8 +9,9 @@ import '../models/track.dart';
 /// Every method maps 1:1 to the REST endpoints on the Elysium server.
 class ElysiumApi {
   final String baseUrl;
+  final String apiSecret;
 
-  ElysiumApi(this.baseUrl);
+  ElysiumApi(this.baseUrl, {this.apiSecret = ''});
 
   String get _lib => '$baseUrl/api/v1/library';
   String get _invidious => '$baseUrl/api/invidious';
@@ -26,6 +27,7 @@ class ElysiumApi {
     final requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      if (apiSecret.isNotEmpty) 'Authorization': 'Bearer $apiSecret',
       ...?headers,
     };
 
@@ -184,30 +186,30 @@ class ElysiumApi {
   // ── iTunes Proxy ──────────────────────────────────────────────────────────
   Future<dynamic> itunesSearch(String term, {int limit = 30}) async {
     return _get(
-      '$baseUrl/api/itunes-proxy/search?term=${Uri.encodeComponent(term)}&entity=song&limit=$limit',
+      '$_lib/itunes/search?term=${Uri.encodeComponent(term)}&entity=song&limit=$limit',
     );
   }
 
   Future<dynamic> itunesTopSongs(String cc, {int limit = 30}) async {
-    return _get('$baseUrl/api/itunes-proxy/rss/$cc/topsongs?limit=$limit');
+    return _get('$_lib/itunes/rss/$cc/topsongs?limit=$limit');
   }
 
   // ── Lyrics Proxy ──────────────────────────────────────────────────────────
   Future<dynamic> lyricsSearch(String query) async {
     return _get(
-      '$baseUrl/api/lyrics-proxy/netease/search?s=${Uri.encodeComponent(query)}&limit=5',
+      '$_lib/netease/search?s=${Uri.encodeComponent(query)}&limit=5',
     );
   }
 
   Future<dynamic> lyricsGet(String id) async {
-    return _get('$baseUrl/api/lyrics-proxy/netease/lyric?id=$id');
+    return _get('$_lib/netease/lyric?id=$id');
   }
 
   // ── Invidious Proxy ───────────────────────────────────────────────────────
   Future<List<Track>> invidiousSearch(String query, {required String instanceUrl, String type = 'video'}) async {
     if (instanceUrl.isEmpty) return [];
     final data = await _get(
-      '$_invidious/search?instanceUrl=${Uri.encodeComponent(instanceUrl)}&q=${Uri.encodeComponent(query)}&type=$type',
+      '$_lib/invidious/search?instanceUrl=${Uri.encodeComponent(instanceUrl)}&q=${Uri.encodeComponent(query)}&type=$type',
     );
     if (data is! List) return [];
     return data.map((v) => Track(
@@ -222,7 +224,7 @@ class ElysiumApi {
 
   Future<Map<String, dynamic>> getVideoDetails(String videoId, {required String instanceUrl, String? sid}) async {
     return await _get(
-      '$_invidious/video/$videoId',
+      '$_lib/invidious/video/$videoId',
       headers: {
         'x-invidious-instance': instanceUrl,
         if (sid != null) 'x-invidious-sid': sid,
@@ -232,14 +234,14 @@ class ElysiumApi {
 
   Future<Map<String, dynamic>> invidiousLogin(String instanceUrl, String username, String password) async {
     return await _post(
-      '$_invidious/login',
+      '$_lib/invidious/login',
       {'instanceUrl': instanceUrl, 'username': username, 'password': password},
     ) as Map<String, dynamic>;
   }
 
   Future<List<dynamic>> getInvidiousPlaylists({required String instanceUrl, String? sid}) async {
     final data = await _get(
-      '$_invidious/playlists',
+      '$_lib/invidious/playlists',
       headers: {
         'x-invidious-instance': instanceUrl,
         if (sid != null) 'x-invidious-sid': sid,
@@ -263,6 +265,50 @@ class ElysiumApi {
   Future<Map<String, dynamic>> validateListenBrainzToken(String token) async {
     return await _get(
       '$baseUrl/api/v1/listenbrainz/validate?token=${Uri.encodeComponent(token)}',
+    ) as Map<String, dynamic>;
+  }
+
+  Future<void> bulkScrobble(List<Track> tracks) async {
+    await _post(
+      '$baseUrl/api/v1/scrobble',
+      {
+        'listen_type': 'import',
+        'tracks': tracks.map((t) => {
+          'artist_name': t.artist,
+          'track_name': t.title,
+          if (t.album != null) 'release_name': t.album,
+        }).toList(),
+      },
+    );
+  }
+
+  Future<List<dynamic>> getListenBrainzPlaylists() async {
+    final data = await _get('$baseUrl/api/v1/listenbrainz/playlists');
+    return data as List<dynamic>;
+  }
+
+  Future<Map<String, dynamic>> syncPlaylistToListenBrainz(String localId) async {
+    return await _post(
+      '$baseUrl/api/v1/listenbrainz/sync-playlist/$localId',
+      {},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Playlist> getListenBrainzPlaylistDetail(String mbid) async {
+    final data = await _get('$baseUrl/api/v1/listenbrainz/playlist/$mbid');
+    return Playlist.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<Map<String, dynamic>> importListenBrainzPlaylist(String mbid) async {
+    return await _post(
+      '$baseUrl/api/v1/listenbrainz/import-playlist/$mbid',
+      {},
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> validateLastFmKey(String apiKey) async {
+    return await _get(
+      '$baseUrl/api/v1/lastfm/validate?apiKey=${Uri.encodeComponent(apiKey)}',
     ) as Map<String, dynamic>;
   }
 

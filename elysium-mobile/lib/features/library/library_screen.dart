@@ -7,6 +7,7 @@ import '../../core/api/elysium_api.dart';
 import '../../core/models/models.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
+import '../../core/widgets/glass_widgets.dart';
 
 enum _LibTab { favorites, playlists, artists, albums }
 
@@ -56,35 +57,37 @@ class LibraryScreen extends HookConsumerWidget {
       return null;
     }, [serverIp]);
 
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF050505) : cs.surface,
-      body: SafeArea(
+    return PremiumBackground(
+      child: SafeArea(
         bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      'Library',
+                      'Your Library',
                       style: TextStyle(
                         fontSize: 34,
-                        fontWeight: FontWeight.w800,
-                        color: isDark ? Colors.white : cs.onSurface,
-                        letterSpacing: -0.5,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: -1,
                       ),
                     ),
                   ),
                   if (tab.value == _LibTab.playlists)
-                    IconButton(
-                      icon:
-                          Icon(Icons.add_rounded, color: cs.primary),
-                      onPressed: () => _createPlaylistDialog(
-                          context, api, playlists),
+                    GlassCard(
+                      padding: EdgeInsets.zero,
+                      borderRadius: BorderRadius.circular(12),
+                      child: IconButton(
+                        icon: Icon(Icons.add_rounded, color: cs.primary),
+                        onPressed: () => _createPlaylistDialog(
+                            context, api, playlists),
+                      ),
                     ),
                 ],
               ),
@@ -92,28 +95,30 @@ class LibraryScreen extends HookConsumerWidget {
 
             // Tab pills
             SizedBox(
-              height: 38,
+              height: 48,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 children: _LibTab.values
-                    .map((t) => _TabPill(
-                          label: _tabLabel(t),
-                          selected: tab.value == t,
-                          cs: cs,
-                          isDark: isDark,
-                          onTap: () => tab.value = t,
+                    .map((t) => Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: GlassPill(
+                            label: _tabLabel(t),
+                            selected: tab.value == t,
+                            onTap: () => tab.value = t,
+                          ),
                         ))
                     .toList(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
 
             // Content
             Expanded(
               child: RefreshIndicator(
                 onRefresh: loadAll,
                 color: cs.primary,
+                backgroundColor: Colors.white,
                 child: loading.value
                     ? Center(
                         child: CircularProgressIndicator(
@@ -204,48 +209,73 @@ class LibraryScreen extends HookConsumerWidget {
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 160),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 160),
           itemCount: playlists.value.length,
           itemBuilder: (context, i) {
             final pl = playlists.value[i];
-            return ListTile(
-              leading: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: cs.primaryContainer,
-                  borderRadius: BorderRadius.circular(10),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassCard(
+                opacity: 0.05,
+                borderRadius: BorderRadius.circular(16),
+                child: ListTile(
+                  leading: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.queue_music_rounded,
+                        color: cs.primary),
+                  ),
+                  title: Text(pl.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                  subtitle: Text(
+                      '${pl.videos.length} tracks',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.cloud_upload_outlined, color: cs.primary, size: 20),
+                        onPressed: () async {
+                          final sc = ScaffoldMessenger.of(context);
+                          sc.showSnackBar(const SnackBar(content: Text('Syncing to ListenBrainz...')));
+                          try {
+                            await api.syncPlaylistToListenBrainz(pl.id);
+                            sc.showSnackBar(const SnackBar(content: Text('Synced to ListenBrainz ✓')));
+                          } catch (e) {
+                            sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.delete_outline_rounded,
+                            color: Colors.redAccent.withValues(alpha: 0.7), size: 20),
+                        onPressed: () async {
+                          await api
+                              .deletePlaylist(pl.id)
+                              .catchError((_) {});
+                          playlists.value = playlists.value
+                              .where((p) => p.id != pl.id)
+                              .toList();
+                        },
+                      ),
+                    ],
+                  ),
+                  onTap: () {
+                    if (pl.videos.isNotEmpty) {
+                      ref
+                          .read(playerProvider.notifier)
+                          .setQueue(pl.videos);
+                      ref.read(playerProvider.notifier).playIndex(0);
+                    }
+                  },
                 ),
-                child: Icon(Icons.queue_music_rounded,
-                    color: cs.onPrimaryContainer),
               ),
-              title: Text(pl.title,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? Colors.white : cs.onSurface)),
-              subtitle: Text(
-                  '${pl.videos.length} tracks',
-                  style: TextStyle(color: cs.onSurfaceVariant)),
-              trailing: IconButton(
-                icon: Icon(Icons.delete_outline_rounded,
-                    color: cs.error),
-                onPressed: () async {
-                  await api
-                      .deletePlaylist(pl.id)
-                      .catchError((_) {});
-                  playlists.value = playlists.value
-                      .where((p) => p.id != pl.id)
-                      .toList();
-                },
-              ),
-              onTap: () {
-                if (pl.videos.isNotEmpty) {
-                  ref
-                      .read(playerProvider.notifier)
-                      .setQueue(pl.videos);
-                  ref.read(playerProvider.notifier).playIndex(0);
-                }
-              },
             );
           },
         );

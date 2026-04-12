@@ -8,6 +8,7 @@ import '../../core/api/elysium_api.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
 import '../../core/utils.dart';
+import '../../core/widgets/glass_widgets.dart';
 
 const _countries = [
   ('us', '🇺🇸 US'),
@@ -66,39 +67,46 @@ class HomeScreen extends HookConsumerWidget {
       return null;
     }, [serverIp, country.value]);
 
-    return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF050505) : cs.surface,
-      body: RefreshIndicator(
+    return PremiumBackground(
+      child: RefreshIndicator(
         onRefresh: load,
         color: cs.primary,
+        backgroundColor: Colors.white,
         child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
           slivers: [
             // Large title header
             SliverToBoxAdapter(
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Elysium',
-                        style: TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w900,
-                          color: isDark ? Colors.white : cs.onSurface,
-                          letterSpacing: -1,
+                      ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: [Colors.white, Colors.white.withValues(alpha: 0.7)],
+                        ).createShader(bounds),
+                        child: Text(
+                          'Elysium',
+                          style: TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: -2,
+                            height: 1,
+                          ),
                         ),
                       ),
+                      const SizedBox(height: 4),
                       Text(
-                        'Your music, your server',
+                        'Your music ecosystem, perfected.',
                         style: TextStyle(
-                          fontSize: 14,
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.4)
-                              : cs.onSurfaceVariant,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.4),
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ],
@@ -109,63 +117,50 @@ class HomeScreen extends HookConsumerWidget {
 
             // Country picker
             SliverToBoxAdapter(
-              child: SizedBox(
-                height: 44,
+              child: Container(
+                height: 48,
+                margin: const EdgeInsets.only(top: 8),
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   itemCount: _countries.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemBuilder: (context, i) {
                     final (cc, label) = _countries[i];
-                    final selected = country.value == cc;
-                    return GestureDetector(
+                    return GlassPill(
+                      label: label,
+                      selected: country.value == cc,
                       onTap: () => country.value = cc,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? cs.primary
-                              : cs.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: selected
-                                ? cs.onPrimary
-                                : cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
                     );
                   },
                 ),
               ),
             ),
 
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
             // Trending section
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Text(
-                  '🔥 Trending',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: isDark ? Colors.white : cs.onSurface,
-                    letterSpacing: -0.3,
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    Text(
+                      'Trending Now',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(Icons.trending_up_rounded, color: cs.primary, size: 20),
+                  ],
                 ),
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 14)),
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
             SliverToBoxAdapter(
               child: loading.value
@@ -203,36 +198,44 @@ class HomeScreen extends HookConsumerWidget {
 
             // Recently Played
             if (history.value.isNotEmpty) ...[
-              const SliverToBoxAdapter(child: SizedBox(height: 28)),
+              const SliverToBoxAdapter(child: SizedBox(height: 36)),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
-                    '🕐 Recently Played',
+                    'Recently Played',
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 22,
                       fontWeight: FontWeight.w800,
-                      color: isDark ? Colors.white : cs.onSurface,
-                      letterSpacing: -0.3,
+                      color: Colors.white,
+                      letterSpacing: -0.5,
                     ),
                   ),
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
                     final track = history.value[index];
-                    return _HistoryTile(
-                      track: track,
-                      cs: cs,
-                      isDark: isDark,
-                      onTap: () {
-                        ref.read(playerProvider.notifier).setQueue(
-                              history.value.sublist(index),
-                            );
-                        ref.read(playerProvider.notifier).playIndex(0);
-                      },
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                      child: GlassCard(
+                        padding: EdgeInsets.zero,
+                        borderRadius: BorderRadius.circular(16),
+                        opacity: 0.04,
+                        child: _HistoryTile(
+                          track: track,
+                          cs: cs,
+                          isDark: isDark,
+                          onTap: () {
+                            ref.read(playerProvider.notifier).setQueue(
+                                  history.value.sublist(index),
+                                );
+                            ref.read(playerProvider.notifier).playIndex(0);
+                          },
+                        ),
+                      ),
                     );
                   },
                   childCount: history.value.length,
@@ -263,57 +266,62 @@ class _TrendingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 200,
+      height: 230,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 16),
         itemBuilder: (context, i) {
           final item = items[i];
           return GestureDetector(
             onTap: () => onTap(i),
-            child: SizedBox(
-              width: 140,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: item['artwork'] != null
-                        ? CachedNetworkImage(
-                            imageUrl: item['artwork']!,
-                            width: 140,
-                            height: 140,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => _artPlaceholder(cs),
-                          )
-                        : _artPlaceholder(cs),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    item['title'] ?? '—',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDark ? Colors.white : cs.onSurface,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      height: 1.3,
+            child: GlassCard(
+              padding: const EdgeInsets.all(10),
+              opacity: 0.1,
+              borderRadius: BorderRadius.circular(20),
+              child: SizedBox(
+                width: 150,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: item['artwork'] != null
+                          ? CachedNetworkImage(
+                              imageUrl: item['artwork']!,
+                              width: 150,
+                              height: 150,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => _artPlaceholder(cs),
+                            )
+                          : _artPlaceholder(cs),
                     ),
-                  ),
-                  Text(
-                    item['artist'] ?? '—',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.5)
-                          : cs.onSurfaceVariant,
-                      fontSize: 12,
+                    const SizedBox(height: 10),
+                    Text(
+                      item['title'] ?? '—',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        letterSpacing: -0.2,
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      item['artist'] ?? '—',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

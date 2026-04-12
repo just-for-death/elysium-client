@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
 import '../../core/store/providers.dart';
+import '../../core/widgets/glass_widgets.dart';
 import 'video_player_view.dart';
 
 enum _PlayerTab { cover, lyrics, queue }
@@ -37,11 +38,24 @@ class PlayerScreen extends HookConsumerWidget {
       artworkAnim
         ..reset()
         ..forward();
+      // Reset rotation on track change is handled by the widget state
       lyrics.value = [];
       lyricError.value = '';
       activeLyricIdx.value = 0;
       return null;
     }, [track?.effectiveId]);
+
+    final rotationCtrl = useAnimationController(
+        duration: const Duration(seconds: 20));
+
+    useEffect(() {
+      if (player.isPlaying) {
+        rotationCtrl.repeat();
+      } else {
+        rotationCtrl.stop();
+      }
+      return null;
+    }, [player.isPlaying]);
 
     // Lyrics fetch on tab switch
     useEffect(() {
@@ -193,15 +207,21 @@ class PlayerScreen extends HookConsumerWidget {
                 ),
 
                 // Tab pills
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: _PlayerTab.values
-                      .map((t) => _PlayerTabPill(
-                            label: _tabLabel(t),
-                            selected: tab.value == t,
-                            onTap: () => tab.value = t,
-                          ))
-                      .toList(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: _PlayerTab.values
+                        .map((t) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: GlassPill(
+                                label: _tabLabel(t),
+                                selected: tab.value == t,
+                                onTap: () => tab.value = t,
+                              ),
+                            ))
+                        .toList(),
+                  ),
                 ),
                 const SizedBox(height: 8),
 
@@ -467,27 +487,67 @@ class PlayerScreen extends HookConsumerWidget {
             ),
           );
         }
-        return ScaleTransition(
-          scale: CurvedAnimation(
-              parent: artworkAnim, curve: Curves.elasticOut),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: CachedNetworkImage(
-                    imageUrl: artworkUrl,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(
-                      color: cs.surfaceContainerHighest,
-                      child: Icon(Icons.music_note_rounded,
-                          size: 80,
-                          color: cs.primary.withValues(alpha: 0.4)),
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                   // Shadow/Glow
+                  Container(
+                    width: double.infinity,
+                    height: double.infinity,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 30,
+                          spreadRadius: 5,
+                        )
+                      ],
                     ),
                   ),
-                ),
+                  RotationTransition(
+                    turns: rotationCtrl,
+                    child: ScaleTransition(
+                      scale: CurvedAnimation(
+                          parent: artworkAnim, curve: Curves.elasticOut),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF1A1A1A),
+                          border: Border.all(color: Colors.white10, width: 2),
+                        ),
+                        child: ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: artworkUrl,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(
+                              color: cs.surfaceContainerHighest,
+                              child: Icon(Icons.music_note_rounded,
+                                  size: 80,
+                                  color: cs.primary.withValues(alpha: 0.4)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Center hole
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white24, width: 1),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
