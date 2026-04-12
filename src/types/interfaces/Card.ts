@@ -1,0 +1,45 @@
+import type { VideoThumbnail as Thumbnail } from "./Video";
+
+export type CardVideoTypes = "video" | "livestream" | "scheduled";
+
+export interface CardVideo {
+  type: CardVideoTypes;
+  videoId: string;
+  title: string;
+  thumbnail: string;
+  liveNow: boolean;
+  lengthSeconds: number;
+  videoThumbnails?: Thumbnail[];
+  /** MusicBrainz recording MBID — preserved when importing from ListenBrainz to avoid re-lookup on push */
+  recordingMbid?: string;
+}
+
+export interface CardChannel {
+  type: "channel";
+  author: string;
+  authorId: string;
+  authorVerified: boolean;
+  videoCount: number;
+  description: string;
+  subCount: number;
+  thumbnail: string;
+  authorThumbnails?: Thumbnail[];
+}
+
+export interface CardPlaylistVideo {
+  videoId: string;
+  title: string;
+  thumbnail: string;
+  videoThumbnails?: Thumbnail[];
+}
+
+export interface CardPlaylist {
+  type: "playlist" | "cache";
+  playlistId?: string;
+  ID?: number;
+  title: string;
+  videoCount: number;
+  videos: CardVideo[];
+}
+
+export type Card = CardVideo | CardPlaylist | CardChannel;

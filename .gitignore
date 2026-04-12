@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+server/node_modules/
+sync-server/node_modules/
+
+# Build output
+build/
+.build/
+dist/
+
+# Environment files (NEVER commit secrets)
+.env
+.env.local
+.env.development
+.env.test
+# .env.dist is kept — it's the safe template
+
+# Runtime data / persistent storage (created by the server at runtime)
+# These live in a Docker volume (DATA_DIR) — never in the repo.
+server/library.json
+server/data/
+sync-server/confirmed-pairs.json
+sync-server/pending-deletions.json
+sync-server/data/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+e2e/
+*.spec.ts
+playwright-report/
+test-results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Large binary / archive files — should never be committed
+*.zip
+*.tar.gz
+*.tar.bz2

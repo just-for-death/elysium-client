@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+
+    <!-- ── Viewport ─────────────────────────────────────────────────────── -->
+    <!-- viewport-fit=cover: fills the iPhone notch / Dynamic Island / iPad status bar -->
+    <!-- user-scalable=no: prevents accidental zoom during music playback gestures    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, viewport-fit=cover, interactive-widget=resizes-content" />
+
+    <!-- ── Color scheme ─────────────────────────────────────────────────── -->
+    <meta name="color-scheme" content="dark" />
+
+    <!-- ── Primary meta ─────────────────────────────────────────────────── -->
+    <meta name="description" content="Privacy-focused music player powered by the Invidious API. Listen without ads or tracking." />
+    <meta name="application-name" content="Elysium" />
+
+    <!-- ── Theme color ──────────────────────────────────────────────────── -->
+    <meta name="theme-color" content="#0a1214" />
+
+    <!-- ── PWA / standalone behaviour ───────────────────────────────────── -->
+    <!-- Android Chrome + Firefox Android -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- iOS Safari + Firefox iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- black-translucent: status bar overlays the app, letting theme-color show through -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Elysium" />
+
+    <!-- ── iOS safe-area insets (notch / home bar / Dynamic Island) ──────── -->
+    <!-- These CSS env() vars are activated by viewport-fit=cover above.      -->
+    <!-- Components that need padding use: padding-bottom: env(safe-area-inset-bottom) -->
+
+    <!-- ── Background audio — Firefox Android needs this hint ──────────── -->
+    <meta name="media-playback" content="background" />
+
+    <!-- ── iOS: prevent content size shift when SW keyboard appears ─────── -->
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- ── Google Fonts ─────────────────────────────────────────────────── -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap" rel="stylesheet" />
+
+    <!-- ── PWA manifest ─────────────────────────────────────────────────── -->
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+    <!-- ── Favicons ─────────────────────────────────────────────────────── -->
+    <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/x-icon" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="%PUBLIC_URL%/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="16x16"   href="%PUBLIC_URL%/favicons/ios/16.png" />
+    <link rel="icon" type="image/png" sizes="32x32"   href="%PUBLIC_URL%/favicons/ios/32.png" />
+    <link rel="icon" type="image/png" sizes="96x96"   href="%PUBLIC_URL%/favicons/android/android-launchericon-96-96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/favicons/android/android-launchericon-192-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="%PUBLIC_URL%/favicons/android/android-launchericon-512-512.png" />
+    <link rel="mask-icon" href="%PUBLIC_URL%/favicon.svg" color="#2ab5a5" />
+
+    <!-- ── Apple touch icons (Firefox iOS + Safari) ─────────────────────── -->
+    <link rel="apple-touch-icon"                    href="%PUBLIC_URL%/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="120x120"    href="%PUBLIC_URL%/favicons/ios/120.png" />
+    <link rel="apple-touch-icon" sizes="152x152"    href="%PUBLIC_URL%/favicons/ios/152.png" />
+    <link rel="apple-touch-icon" sizes="167x167"    href="%PUBLIC_URL%/favicons/ios/167.png" />
+    <link rel="apple-touch-icon" sizes="180x180"    href="%PUBLIC_URL%/favicons/ios/180.png" />
+
+    <!-- ── iOS splash screens (prevents white flash on launch) ──────────── -->
+    <!-- iPhone SE / 8 -->
+    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPhone X / XS / 11 Pro -->
+    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPhone XR / 11 -->
+    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPhone 12 / 13 / 14 -->
+    <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPhone 12 / 13 / 14 Pro Max -->
+    <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPhone 14 Pro / 15 Pro (Dynamic Island) -->
+    <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPhone 14 Pro Max / 15 Pro Max -->
+    <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPad mini 6th gen -->
+    <link rel="apple-touch-startup-image" media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPad Air (landscape + portrait) -->
+    <link rel="apple-touch-startup-image" media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPad 9th/10th gen -->
+    <link rel="apple-touch-startup-image" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPad Pro 11" (all gens) -->
+    <link rel="apple-touch-startup-image" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+    <!-- iPad Pro 12.9" -->
+    <link rel="apple-touch-startup-image" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)"
+          href="%PUBLIC_URL%/favicons/ios/1024.png" />
+
+    <!-- ── Microsoft Tiles ───────────────────────────────────────────────── -->
+    <meta name="msapplication-TileColor" content="#1a1b1e" />
+    <meta name="msapplication-config" content="none" />
+
+    <!-- ── Open Graph ────────────────────────────────────────────────────── -->
+    <meta property="og:type"        content="website" />
+    <meta property="og:title"       content="Elysium – Private Music Player" />
+    <meta property="og:description" content="Privacy-focused music player powered by the Invidious API." />
+    <meta property="og:image"       content="%PUBLIC_URL%/favicons/android/android-launchericon-512-512.png" />
+
+    <title>Elysium</title>
+
+    <style>
+      /* Prevent FOUC */
+      body { visibility: hidden; background: #0a1214; }
+      html.loaded body { visibility: visible; }
+
+      /* Prevent iOS rubber-band white flash */
+      html, body {
+        background: #0a1214;
+        overscroll-behavior: none;
+      }
+
+      /* iPad: prevent text size adjustment when rotating */
+      body {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+
+      /* ── iOS safe-area: expose env() variables app-wide ──────────────────
+         Components use:  padding-bottom: env(safe-area-inset-bottom)
+         This ensures the player bar clears the iPhone home indicator and
+         the iPad dock. viewport-fit=cover (in <meta name="viewport">) must
+         be set for these values to be non-zero.                           */
+      :root {
+        --sai-top:    env(safe-area-inset-top,    0px);
+        --sai-right:  env(safe-area-inset-right,  0px);
+        --sai-bottom: env(safe-area-inset-bottom, 0px);
+        --sai-left:   env(safe-area-inset-left,   0px);
+      }
+
+      /* Android: prevent pull-to-refresh from fighting with the player swipe gesture */
+      body {
+        overscroll-behavior-y: contain;
+      }
+
+      /* ── iOS standalone PWA: hide the status bar area overlap on notch devices */
+      /* Only apply in standalone — in-browser the UA handles notch clearance.   */
+      /* App.css handles the authoritative safe-area-inset rules for standalone.  */
+      @media (display-mode: standalone) {
+        body {
+          padding-top: env(safe-area-inset-top, 0px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>
