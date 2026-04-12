@@ -56,7 +56,9 @@ class SettingsNotifier extends StateNotifier<ElysiumSettings?> {
     try {
       final s = await ElysiumApi(serverIp).getSettings();
       state = s;
-    } catch (_) {}
+    } catch (e) {
+      print('Settings sync failed: $e');
+    }
   }
 
   Future<void> update(Map<String, dynamic> json) async {
@@ -70,7 +72,7 @@ class SettingsNotifier extends StateNotifier<ElysiumSettings?> {
     }
   }
 
-  void refresh() => _init();
+  Future<void> refresh() => _init();
 }
 
 // ── Player state ──────────────────────────────────────────────────────────────

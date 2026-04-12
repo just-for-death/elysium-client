@@ -14,7 +14,7 @@ class ElysiumApi {
   ElysiumApi(this.baseUrl, {this.apiSecret = ''});
 
   String get _lib => '$baseUrl/api/v1/library';
-  String get _invidious => '$baseUrl/api/invidious';
+  String get _invidious => '$_lib/invidious';
 
   // ── Core fetch helper ─────────────────────────────────────────────────────
   Future<dynamic> _request(
@@ -264,13 +264,13 @@ class ElysiumApi {
 
   Future<Map<String, dynamic>> validateListenBrainzToken(String token) async {
     return await _get(
-      '$baseUrl/api/v1/listenbrainz/validate?token=${Uri.encodeComponent(token)}',
+      '$_lib/listenbrainz/validate?token=${Uri.encodeComponent(token)}',
     ) as Map<String, dynamic>;
   }
 
   Future<void> bulkScrobble(List<Track> tracks) async {
     await _post(
-      '$baseUrl/api/v1/scrobble',
+      '$_lib/scrobble',
       {
         'listen_type': 'import',
         'tracks': tracks.map((t) => {
@@ -283,32 +283,32 @@ class ElysiumApi {
   }
 
   Future<List<dynamic>> getListenBrainzPlaylists() async {
-    final data = await _get('$baseUrl/api/v1/listenbrainz/playlists');
+    final data = await _get('$_lib/listenbrainz/playlists');
     return data as List<dynamic>;
   }
 
   Future<Map<String, dynamic>> syncPlaylistToListenBrainz(String localId) async {
     return await _post(
-      '$baseUrl/api/v1/listenbrainz/sync-playlist/$localId',
+      '$_lib/listenbrainz/sync-playlist/$localId',
       {},
     ) as Map<String, dynamic>;
   }
 
   Future<Playlist> getListenBrainzPlaylistDetail(String mbid) async {
-    final data = await _get('$baseUrl/api/v1/listenbrainz/playlist/$mbid');
+    final data = await _get('$_lib/listenbrainz/playlist/$mbid');
     return Playlist.fromJson(data as Map<String, dynamic>);
   }
 
   Future<Map<String, dynamic>> importListenBrainzPlaylist(String mbid) async {
     return await _post(
-      '$baseUrl/api/v1/listenbrainz/import-playlist/$mbid',
+      '$_lib/listenbrainz/import-playlist/$mbid',
       {},
     ) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> validateLastFmKey(String apiKey) async {
     return await _get(
-      '$baseUrl/api/v1/lastfm/validate?apiKey=${Uri.encodeComponent(apiKey)}',
+      '$_lib/lastfm/validate?apiKey=${Uri.encodeComponent(apiKey)}',
     ) as Map<String, dynamic>;
   }
 
@@ -343,7 +343,7 @@ class ElysiumApi {
     required String trackName,
     String? releaseName,
   }) async {
-    await _post('$baseUrl/api/v1/scrobble', {
+    await _post('$_lib/scrobble', {
       'track_metadata': {
         'artist_name': artistName,
         'track_name': trackName,

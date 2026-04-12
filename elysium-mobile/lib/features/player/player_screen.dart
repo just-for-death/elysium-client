@@ -239,6 +239,7 @@ class PlayerScreen extends HookConsumerWidget {
                     activeLyricIdx,
                     lyricsScrollCtrl,
                     artworkAnim,
+                    rotationCtrl,
                     cs,
                   ),
                 ),
@@ -469,6 +470,7 @@ class PlayerScreen extends HookConsumerWidget {
     ValueNotifier<int> activeLyricIdx,
     ScrollController scrollCtrl,
     AnimationController artworkAnim,
+    AnimationController rotationCtrl,
     ColorScheme cs,
   ) {
     switch (tab) {

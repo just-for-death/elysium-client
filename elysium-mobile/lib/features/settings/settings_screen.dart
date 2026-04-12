@@ -6,6 +6,7 @@ import '../../core/api/elysium_api.dart';
 import '../../core/models/models.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
+import '../../core/widgets/glass_widgets.dart';
 
 class SettingsScreen extends HookConsumerWidget {
   const SettingsScreen({super.key});
@@ -39,6 +40,22 @@ class SettingsScreen extends HookConsumerWidget {
     final lbPlaylists = useState<List<dynamic>?>(null);
     final plLoading = useState(false);
     final lbLoading = useState(false);
+    
+    // Connectivity/Sync state for initial load
+    final loading = useState(settings == null);
+    final errorMsg = useState<String?>(null);
+
+    Future<void> loadSettings() async {
+      loading.value = true;
+      errorMsg.value = null;
+      try {
+        await ref.read(settingsProvider.notifier).refresh();
+      } catch (e) {
+        errorMsg.value = e.toString();
+      } finally {
+        loading.value = false;
+      }
+    }
 
     // Sync controllers with remote state
     useEffect(() {
@@ -287,8 +304,8 @@ class SettingsScreen extends HookConsumerWidget {
 
             useEffect(() {
               api.getInvidiousPlaylistDetail(id, 
-                instanceUrl: settings.value!.invidiousInstance, 
-                sid: settings.value?.invidiousSid
+                instanceUrl: settings?.invidiousInstance ?? '', 
+                sid: settings?.invidiousSid
               ).then((p) {
                 pvPlaylist.value = p;
                 pvLoading.value = false;
@@ -368,7 +385,7 @@ class SettingsScreen extends HookConsumerWidget {
                             onPressed: () async {
                               Navigator.pop(ctx);
                               try {
-                                await api.syncInvidiousPlaylist(id, instanceUrl: settings.value!.invidiousInstance, sid: settings.value?.invidiousSid);
+                                await api.syncInvidiousPlaylist(id, instanceUrl: settings?.invidiousInstance ?? '', sid: settings?.invidiousSid);
                                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Syncing to Library...')));
                               } catch (e) {
                                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
@@ -495,7 +512,7 @@ class SettingsScreen extends HookConsumerWidget {
                         hint: 'e.g. 192.168.1.10:3000', 
                         isDark: isDark, 
                         cs: cs,
-                        onChanged: (v) => ref.read(serverIpProvider.notifier).state = v.trim(),
+                        onChanged: (v) => ref.read(serverIpProvider.notifier).update(v.trim()),
                       ),
                       const SizedBox(height: 16),
                       _SettingsLabel('API SECRET', cs),
@@ -541,7 +558,7 @@ class SettingsScreen extends HookConsumerWidget {
                         _SettingsLabel('QUEUE MODE', cs),
                         const SizedBox(height: 8),
                         _QueueModeSelector(
-                          currentMode: settings.queueMode,
+                          currentMode: settings?.queueMode ?? 'off',
                           isDark: isDark,
                           cs: cs,
                           onChanged: (mode) {
@@ -555,7 +572,7 @@ class SettingsScreen extends HookConsumerWidget {
               ),
 
               // ── OLLAMA ENGINE ───────────────────────────────────────────
-              if (settings.value!.queueMode == 'my_taste') ...[
+              if ((settings?.queueMode ?? 'off') == 'my_taste') ...[
                 _SectionHeader(label: 'AI Engine', icon: Icons.memory_rounded, isDark: isDark, cs: cs),
                 SliverToBoxAdapter(
                   child: _SettingsCard(
@@ -591,7 +608,7 @@ class SettingsScreen extends HookConsumerWidget {
                       Row(
                         children: [
                           Expanded(child: _SettingsLabel('API KEY (OPTIONAL FALLBACK)', cs)),
-                          if (settings.value!.lastFmApiKey.isNotEmpty)
+                          if (settings.lastFmApiKey.isNotEmpty)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
@@ -626,14 +643,14 @@ class SettingsScreen extends HookConsumerWidget {
                       _StyledTextField(controller: invidiousInstanceCtrl, hint: 'https://invidious.io', isDark: isDark, cs: cs),
                       const SizedBox(height: 12),
                       _InvidiousStatusCard(
-                        isLoggedIn: settings.value!.invidiousUsername != null,
-                        username: settings.value!.invidiousUsername,
-                        instanceUrl: settings.value!.invidiousInstance,
+                        isLoggedIn: settings.invidiousUsername != null,
+                        username: settings.invidiousUsername,
+                        instanceUrl: settings.invidiousInstance,
                         isDark: isDark,
                         cs: cs,
                         onLogin: loginToInvidious,
                       ),
-                      if (settings.value!.invidiousUsername != null) ...[
+                      if (settings.invidiousUsername != null) ...[
                         const SizedBox(height: 20),
                         _SettingsLabel('YOUTUBE PLAYLISTS', cs),
                         const SizedBox(height: 8),
@@ -650,7 +667,7 @@ class SettingsScreen extends HookConsumerWidget {
                             onSync: () async {
                               final sc = ScaffoldMessenger.of(context);
                               try {
-                                await api.syncInvidiousPlaylist(pl['playlistId'], instanceUrl: settings.value!.invidiousInstance, sid: settings.value?.invidiousSid);
+                                await api.syncInvidiousPlaylist(pl['playlistId'], instanceUrl: settings.invidiousInstance, sid: settings?.invidiousSid);
                                 sc.showSnackBar(const SnackBar(content: Text('Playlist synced to Library ✓')));
                               } catch (e) {
                                 sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
@@ -684,7 +701,7 @@ class SettingsScreen extends HookConsumerWidget {
                       const SizedBox(height: 8),
                       _StyledTextField(controller: lbUserCtrl, hint: 'your_username', isDark: isDark, cs: cs),
 
-                      if (settings.value!.listenBrainzUsername != null && settings.value!.listenBrainzUsername!.isNotEmpty) ...[
+                      if (settings.listenBrainzUsername != null && settings.listenBrainzUsername!.isNotEmpty) ...[
                         const SizedBox(height: 20),
                         _SettingsLabel('LISTENBRAINZ TOOLS', cs),
                         const SizedBox(height: 12),
@@ -802,7 +819,7 @@ class SettingsScreen extends HookConsumerWidget {
                       _SwitchTile(
                         label: 'Cache Audio',
                         subtitle: 'Save tracks for offline listening',
-                        value: settings.cacheEnabled,
+                        value: settings?.cacheEnabled ?? true,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
@@ -813,7 +830,7 @@ class SettingsScreen extends HookConsumerWidget {
                       _SwitchTile(
                         label: 'Video Mode',
                         subtitle: 'Prefer high-quality video playback',
-                        value: settings.videoMode,
+                        value: settings?.videoMode ?? false,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
@@ -1293,12 +1310,14 @@ class _StyledTextField extends StatelessWidget {
     required this.isDark,
     required this.cs,
     this.obscure = false,
+    this.onChanged,
   });
   final TextEditingController controller;
   final String hint;
   final bool isDark;
   final ColorScheme cs;
   final bool obscure;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1312,6 +1331,7 @@ class _StyledTextField extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: obscure,
+        onChanged: onChanged,
         style: TextStyle(color: isDark ? Colors.white : cs.onSurface, fontSize: 15, fontWeight: FontWeight.w500),
         decoration: InputDecoration(
           hintText: hint,
