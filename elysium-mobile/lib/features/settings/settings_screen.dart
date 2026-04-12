@@ -63,8 +63,7 @@ class SettingsScreen extends HookConsumerWidget {
     Future<void> loadInvidiousPlaylists() async {
       if (serverIp.isEmpty) return;
       if (settings.value?.invidiousUsername == null || 
-          settings.value?.invidiousInstance.isEmpty == true ||
-          settings.value?.invidiousSid == null) {
+          settings.value?.invidiousInstance.isEmpty == true) {
         invPlaylists.value = null;
         return;
       }
@@ -168,7 +167,8 @@ class SettingsScreen extends HookConsumerWidget {
                       'invidiousUsername': user,
                       'invidiousInstance': sanitizedInstance,
                     });
-                    loadSettings();
+                    await loadSettings();
+                    await loadInvidiousPlaylists();
                   }
                 } catch (e) {
                   if (context.mounted) {
