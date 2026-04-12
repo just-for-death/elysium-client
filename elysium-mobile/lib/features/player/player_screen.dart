@@ -409,6 +409,21 @@ class PlayerScreen extends HookConsumerWidget {
                         onPressed: () =>
                             ref.read(playerProvider.notifier).cycleRepeat(),
                       ),
+
+                      // Video Toggle
+                      IconButton(
+                        icon: Icon(
+                          player.videoMode
+                              ? Icons.videocam_rounded
+                              : Icons.videocam_outlined,
+                          size: 24,
+                          color: player.videoMode
+                              ? cs.primary
+                              : Colors.white.withValues(alpha: 0.5),
+                        ),
+                        onPressed: () =>
+                            ref.read(playerProvider.notifier).toggleVideoMode(),
+                      ),
                     ],
                   ),
                 ),

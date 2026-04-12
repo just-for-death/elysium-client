@@ -22,12 +22,12 @@ class Track {
   factory Track.fromJson(Map<String, dynamic> j) => Track(
         id: (j['id'] ?? j['videoId'] ?? '').toString(),
         videoId: j['videoId']?.toString(),
-        title: j['title'] ?? '—',
-        artist: j['artist'] ?? '—',
-        artwork: j['artwork'],
-        url: j['url'],
-        duration: j['duration'] is int ? j['duration'] : null,
-        album: j['album'],
+        title: j['title']?.toString() ?? '—',
+        artist: j['artist']?.toString() ?? '—',
+        artwork: j['artwork']?.toString(),
+        url: j['url']?.toString(),
+        duration: j['duration'] is int ? j['duration'] : int.tryParse(j['duration']?.toString() ?? ''),
+        album: j['album']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {

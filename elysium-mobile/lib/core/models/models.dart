@@ -9,7 +9,7 @@ class Playlist {
 
   factory Playlist.fromJson(Map<String, dynamic> j) => Playlist(
         id: j['id']?.toString() ?? '',
-        title: j['title'] ?? '—',
+        title: j['title']?.toString() ?? '—',
         videos: (j['videos'] as List<dynamic>? ?? [])
             .map((v) => Track.fromJson(v as Map<String, dynamic>))
             .toList(),
@@ -61,10 +61,10 @@ class Album {
 
   factory Album.fromJson(Map<String, dynamic> j) => Album(
         id: j['id']?.toString() ?? '',
-        title: j['title'] ?? '—',
-        artist: j['artist'] ?? '—',
-        artwork: j['artwork'],
-        year: j['year'] as int?,
+        title: j['title']?.toString() ?? '—',
+        artist: j['artist']?.toString() ?? '—',
+        artwork: j['artwork']?.toString(),
+        year: j['year'] is int ? j['year'] : int.tryParse(j['year']?.toString() ?? ''),
         tracks: (j['tracks'] as List<dynamic>?)
             ?.map((t) => Track.fromJson(t as Map<String, dynamic>))
             .toList(),
@@ -85,6 +85,7 @@ class ElysiumSettings {
   final bool ollamaEnabled;
   final String ollamaUrl;
   final String ollamaModel;
+  final String lastFmApiKey;
   final String listenBrainzToken;
   final String listenBrainzUsername;
   final bool highQuality;
@@ -98,37 +99,50 @@ class ElysiumSettings {
   const ElysiumSettings({
     this.ollamaEnabled = false,
     this.ollamaUrl = '',
-    this.ollamaModel = '',
+    this.ollamaModel = 'llama3.2:3b',
+    this.lastFmApiKey = '',
     this.listenBrainzToken = '',
     this.listenBrainzUsername = '',
     this.highQuality = false,
     this.cacheEnabled = true,
-    this.queueMode = 'normal',
+    this.queueMode = 'off',
     this.invidiousInstance = '',
     this.invidiousSid,
     this.invidiousUsername,
     this.videoMode = false,
   });
 
-  factory ElysiumSettings.fromJson(Map<String, dynamic> j) => ElysiumSettings(
-        ollamaEnabled: j['ollamaEnabled'] as bool? ?? false,
-        ollamaUrl: j['ollamaUrl'] as String? ?? '',
-        ollamaModel: j['ollamaModel'] as String? ?? '',
-        listenBrainzToken: j['listenBrainzToken'] as String? ?? '',
-        listenBrainzUsername: j['listenBrainzUsername'] as String? ?? '',
-        highQuality: j['highQuality'] as bool? ?? false,
-        cacheEnabled: j['cacheEnabled'] as bool? ?? true,
-        queueMode: j['queueMode'] as String? ?? 'normal',
-        invidiousInstance: j['invidiousInstance'] as String? ?? '',
-        invidiousSid: j['invidiousSid'] as String?,
-        invidiousUsername: j['invidiousUsername'] as String?,
-        videoMode: j['videoMode'] as bool? ?? false,
-      );
+  factory ElysiumSettings.fromJson(Map<String, dynamic> j) {
+    bool toBool(dynamic v, bool def) {
+      if (v == null) return def;
+      if (v is bool) return v;
+      if (v is String) return v.toLowerCase() == 'true' || v == '1';
+      if (v is int) return v == 1;
+      return def;
+    }
+
+    return ElysiumSettings(
+      ollamaEnabled: toBool(j['ollamaEnabled'], false),
+      ollamaUrl: j['ollamaUrl']?.toString() ?? '',
+      ollamaModel: j['ollamaModel']?.toString() ?? 'llama3.2:3b',
+      lastFmApiKey: j['lastFmApiKey']?.toString() ?? '',
+      listenBrainzToken: j['listenBrainzToken']?.toString() ?? '',
+      listenBrainzUsername: j['listenBrainzUsername']?.toString() ?? '',
+      highQuality: toBool(j['highQuality'], false),
+      cacheEnabled: toBool(j['cacheEnabled'], true),
+      queueMode: j['queueMode']?.toString() ?? 'off',
+      invidiousInstance: j['invidiousInstance']?.toString() ?? '',
+      invidiousSid: j['invidiousSid']?.toString(),
+      invidiousUsername: j['invidiousUsername']?.toString(),
+      videoMode: toBool(j['videoMode'], false),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'ollamaEnabled': ollamaEnabled,
         'ollamaUrl': ollamaUrl,
         'ollamaModel': ollamaModel,
+        'lastFmApiKey': lastFmApiKey,
         'listenBrainzToken': listenBrainzToken,
         'listenBrainzUsername': listenBrainzUsername,
         'highQuality': highQuality,
@@ -144,6 +158,7 @@ class ElysiumSettings {
     bool? ollamaEnabled,
     String? ollamaUrl,
     String? ollamaModel,
+    String? lastFmApiKey,
     String? listenBrainzToken,
     String? listenBrainzUsername,
     bool? highQuality,
@@ -157,6 +172,7 @@ class ElysiumSettings {
         ollamaEnabled: ollamaEnabled ?? this.ollamaEnabled,
         ollamaUrl: ollamaUrl ?? this.ollamaUrl,
         ollamaModel: ollamaModel ?? this.ollamaModel,
+        lastFmApiKey: lastFmApiKey ?? this.lastFmApiKey,
         listenBrainzToken: listenBrainzToken ?? this.listenBrainzToken,
         listenBrainzUsername: listenBrainzUsername ?? this.listenBrainzUsername,
         highQuality: highQuality ?? this.highQuality,

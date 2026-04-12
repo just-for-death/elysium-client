@@ -1,4 +1,5 @@
-import 'package:media_kit/media_kit.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:media_kit/media_kit.dart' hide Track;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/elysium_api.dart';

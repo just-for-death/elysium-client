@@ -16,57 +16,85 @@ class ElysiumApi {
   String get _invidious => '$baseUrl/api/invidious';
 
   // ── Core fetch helper ─────────────────────────────────────────────────────
-  Future<dynamic> _get(String url, {Map<String, String>? headers}) async {
-    final res = await http.get(
-      Uri.parse(url),
-      headers: {
-        'Content-Type': 'application/json',
-        ...?headers,
-      },
-    ).timeout(const Duration(seconds: 15));
-    if (res.statusCode >= 400) {
-      throw Exception('API ${res.statusCode}: $url');
+  Future<dynamic> _request(
+    String method,
+    String url, {
+    Map<String, String>? headers,
+    dynamic body,
+  }) async {
+    final uri = Uri.parse(url);
+    final requestHeaders = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...?headers,
+    };
+
+    try {
+      final http.Response res;
+      final timeout = const Duration(seconds: 15);
+
+      switch (method.toUpperCase()) {
+        case 'POST':
+          res = await http
+              .post(uri, headers: requestHeaders, body: json.encode(body))
+              .timeout(timeout);
+          break;
+        case 'PUT':
+          res = await http
+              .put(uri, headers: requestHeaders, body: json.encode(body))
+              .timeout(timeout);
+          break;
+        case 'DELETE':
+          res = await http
+              .delete(uri, headers: requestHeaders)
+              .timeout(timeout);
+          break;
+        default:
+          res = await http
+              .get(uri, headers: requestHeaders)
+              .timeout(timeout);
+      }
+
+      final dynamic data = _safeDecode(res.body);
+
+      if (res.statusCode >= 400) {
+        String message = 'Server Error (${res.statusCode})';
+        if (data is Map && data.containsKey('error')) {
+          message = data['error'].toString();
+          if (data.containsKey('detail')) {
+            message += ': ${data['detail']}';
+          }
+        }
+        throw Exception(message);
+      }
+
+      return data;
+    } catch (e) {
+      if (e is http.ClientException || e is Exception) rethrow;
+      throw Exception('Network Error: $e');
     }
-    return json.decode(res.body);
   }
 
-  Future<dynamic> _post(String url, Map<String, dynamic> body, {Map<String, String>? headers}) async {
-    final res = await http.post(
-      Uri.parse(url),
-      headers: {
-        'Content-Type': 'application/json',
-        ...?headers,
-      },
-      body: json.encode(body),
-    ).timeout(const Duration(seconds: 15));
-    if (res.statusCode >= 400) {
-      throw Exception('API ${res.statusCode}: $url');
+  dynamic _safeDecode(String body) {
+    if (body.isEmpty) return null;
+    try {
+      return json.decode(body);
+    } catch (_) {
+      return body; // Return raw body if not JSON
     }
-    return json.decode(res.body);
   }
 
-  Future<dynamic> _put(String url, Map<String, dynamic> body) async {
-    final res = await http.put(
-      Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(body),
-    ).timeout(const Duration(seconds: 15));
-    if (res.statusCode >= 400) {
-      throw Exception('API ${res.statusCode}: $url');
-    }
-    return json.decode(res.body);
-  }
+  Future<dynamic> _get(String url, {Map<String, String>? headers}) =>
+      _request('GET', url, headers: headers);
 
-  Future<dynamic> _delete(String url) async {
-    final res = await http.delete(
-      Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
-    ).timeout(const Duration(seconds: 15));
-    if (res.statusCode >= 400) {
-      throw Exception('API ${res.statusCode}: $url');
-    }
-    return json.decode(res.body);
-  }
+  Future<dynamic> _post(String url, Map<String, dynamic> body,
+          {Map<String, String>? headers}) =>
+      _request('POST', url, body: body, headers: headers);
+
+  Future<dynamic> _put(String url, Map<String, dynamic> body) =>
+      _request('PUT', url, body: body);
+
+  Future<dynamic> _delete(String url) => _request('DELETE', url);
 
   // ── Settings ──────────────────────────────────────────────────────────────
   Future<ElysiumSettings> getSettings() async {
@@ -209,24 +237,25 @@ class ElysiumApi {
     ) as Map<String, dynamic>;
   }
 
-  Future<List<dynamic>> getInvidiousPlaylists({required String instanceUrl, required String sid}) async {
+  Future<List<dynamic>> getInvidiousPlaylists({required String instanceUrl, String? sid}) async {
     final data = await _get(
       '$_invidious/playlists',
       headers: {
         'x-invidious-instance': instanceUrl,
-        'x-invidious-sid': sid,
+        if (sid != null) 'x-invidious-sid': sid,
       },
     );
+    // The server now returns a direct list or handles the wrapping
     return data as List<dynamic>;
   }
 
-  Future<dynamic> syncInvidiousPlaylist(String playlistId, {required String instanceUrl, required String sid}) async {
+  Future<dynamic> syncInvidiousPlaylist(String playlistId, {required String instanceUrl, String? sid}) async {
     return await _post(
       '$_invidious/sync-playlist/$playlistId',
       {},
       headers: {
         'x-invidious-instance': instanceUrl,
-        'x-invidious-sid': sid,
+        if (sid != null) 'x-invidious-sid': sid,
       },
     );
   }

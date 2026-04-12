@@ -16,8 +16,7 @@ class SettingsScreen extends HookConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final serverCtrl =
-        useTextEditingController(text: serverIp);
+    final serverCtrl = useTextEditingController(text: serverIp);
     final settings = useState<ElysiumSettings?>(null);
     final loading = useState(true);
     final saving = useState(false);
@@ -28,6 +27,7 @@ class SettingsScreen extends HookConsumerWidget {
     final ollamaUrlCtrl = useTextEditingController();
     final ollamaModelCtrl = useTextEditingController();
     final invidiousInstanceCtrl = useTextEditingController();
+    final lastFmKeyCtrl = useTextEditingController();
 
     // Login controllers
     final invUserCtrl = useTextEditingController();
@@ -37,9 +37,12 @@ class SettingsScreen extends HookConsumerWidget {
     final invPlaylists = useState<List<dynamic>?>(null);
     final plLoading = useState(false);
 
+    final errorMsg = useState<String?>(null);
+
     Future<void> loadSettings() async {
       if (serverIp.isEmpty) return;
       loading.value = true;
+      errorMsg.value = null;
       try {
         final s = await api.getSettings();
         settings.value = s;
@@ -48,24 +51,37 @@ class SettingsScreen extends HookConsumerWidget {
         ollamaUrlCtrl.text = s.ollamaUrl;
         ollamaModelCtrl.text = s.ollamaModel;
         invidiousInstanceCtrl.text = s.invidiousInstance;
-      } catch (_) {
+        lastFmKeyCtrl.text = s.lastFmApiKey;
+      } catch (e) {
         settings.value = null;
+        errorMsg.value = e.toString().replaceFirst('Exception: ', '');
       } finally {
         loading.value = false;
       }
     }
 
     Future<void> loadInvidiousPlaylists() async {
-      if (settings.value?.invidiousSid == null || serverIp.isEmpty) return;
+      if (serverIp.isEmpty) return;
+      if (settings.value?.invidiousUsername == null || 
+          settings.value?.invidiousInstance.isEmpty == true ||
+          settings.value?.invidiousSid == null) {
+        invPlaylists.value = null;
+        return;
+      }
       plLoading.value = true;
       try {
         final pl = await api.getInvidiousPlaylists(
           instanceUrl: settings.value!.invidiousInstance,
-          sid: settings.value!.invidiousSid!,
+          sid: settings.value?.invidiousSid,
         );
         invPlaylists.value = pl;
-      } catch (_) {
+      } catch (e) {
         invPlaylists.value = null;
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not fetch playlists: $e')),
+          );
+        }
       } finally {
         plLoading.value = false;
       }
@@ -85,17 +101,18 @@ class SettingsScreen extends HookConsumerWidget {
 
         final updated = await api.updateSettings({
           ...settings.value!.toJson(),
-          'listenBrainzToken': lbTokenCtrl.text,
-          'listenBrainzUsername': lbUserCtrl.text,
-          'ollamaUrl': ollamaUrlCtrl.text,
-          'ollamaModel': ollamaModelCtrl.text,
+          'listenBrainzToken': lbTokenCtrl.text.trim(),
+          'listenBrainzUsername': lbUserCtrl.text.trim(),
+          'ollamaUrl': ollamaUrlCtrl.text.trim(),
+          'ollamaModel': ollamaModelCtrl.text.trim(),
           'invidiousInstance': sanitizedInstance,
+          'lastFmApiKey': lastFmKeyCtrl.text.trim(),
         });
         invidiousInstanceCtrl.text = sanitizedInstance;
         settings.value = updated;
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Settings saved ✓')),
+            const SnackBar(content: Text('All settings synced to server ✓')),
           );
         }
       } catch (e) {
@@ -139,14 +156,17 @@ class SettingsScreen extends HookConsumerWidget {
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () async {
+                final user = invUserCtrl.text;
+                final pass = invPassCtrl.text;
                 Navigator.pop(ctx);
                 loading.value = true;
                 try {
-                  final res = await api.invidiousLogin(instance, invUserCtrl.text, invPassCtrl.text);
+                  final res = await api.invidiousLogin(instance, user, pass);
                   if (res['sid'] != null) {
                     await api.updateSettings({
                       'invidiousSid': res['sid'],
-                      'invidiousUsername': invUserCtrl.text,
+                      'invidiousUsername': user,
+                      'invidiousInstance': sanitizedInstance,
                     });
                     loadSettings();
                   }
@@ -186,52 +206,70 @@ class SettingsScreen extends HookConsumerWidget {
               ),
             ),
 
-            // ── Server connection ───────────────────────────────────────────
-            _SectionHeader(label: 'Server', isDark: isDark, cs: cs),
-            SliverToBoxAdapter(
-              child: _SettingsCard(
-                isDark: isDark,
-                cs: cs,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SettingsLabel('Server URL', cs),
-                    const SizedBox(height: 8),
-                    _StyledTextField(
-                      controller: serverCtrl,
-                      hint: 'http://192.168.x.x:7771',
-                      isDark: isDark,
-                      cs: cs,
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.check_rounded),
-                        label: const Text('Connect'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: cs.primary,
-                          foregroundColor: cs.onPrimary,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: () {
-                          final url = serverCtrl.text.trim();
-                          if (url.isNotEmpty) {
-                            ref.read(serverIpProvider.notifier).update(url);
-                          }
+            if (settings.value != null) ...[
+              // ── AUTO QUEUE ───────────────────────────────────────────────
+              _SectionHeader(label: 'Auto Queue', isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  child: Column(
+                    children: [
+                      _SwitchTile(
+                        label: 'Auto Queue',
+                        subtitle: 'Automatically queue the next track when one is about to end',
+                        value: settings.value!.ollamaEnabled,
+                        cs: cs,
+                        isDark: isDark,
+                        onChanged: (v) {
+                          settings.value = settings.value!.copyWith(ollamaEnabled: v);
+                          api.updateSettings({'ollamaEnabled': v}).ignore();
                         },
                       ),
-                    ),
-                  ],
+                      if (settings.value!.ollamaEnabled) ...[
+                        const SizedBox(height: 16),
+                        _SettingsLabel('QUEUE MODE', cs),
+                        const SizedBox(height: 8),
+                        _QueueModeSelector(
+                          currentMode: settings.value!.queueMode,
+                          isDark: isDark,
+                          cs: cs,
+                          onChanged: (mode) {
+                            settings.value = settings.value!.copyWith(queueMode: mode);
+                            api.updateSettings({'queueMode': mode}).ignore();
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // ── Invidious ───────────────────────────────────────────────────
-            if (settings.value != null) ...[
-              _SectionHeader(label: 'Invidious', isDark: isDark, cs: cs),
+              // ── OLLAMA ENGINE ───────────────────────────────────────────
+              if (settings.value!.queueMode == 'my_taste') ...[
+                _SectionHeader(label: 'Ollama — AI Engine', isDark: isDark, cs: cs),
+                SliverToBoxAdapter(
+                  child: _SettingsCard(
+                    isDark: isDark,
+                    cs: cs,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SettingsLabel('OLLAMA URL', cs),
+                        const SizedBox(height: 8),
+                        _StyledTextField(controller: ollamaUrlCtrl, hint: 'http://localhost:11434', isDark: isDark, cs: cs),
+                        const SizedBox(height: 14),
+                        _SettingsLabel('MODEL', cs),
+                        const SizedBox(height: 8),
+                        _StyledTextField(controller: ollamaModelCtrl, hint: 'llama3', isDark: isDark, cs: cs),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
+              // ── LAST.FM ───────────────────────────────────────────────────
+              _SectionHeader(label: 'Last.fm Plugin', isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
@@ -239,36 +277,95 @@ class SettingsScreen extends HookConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _SettingsLabel('Instance URL', cs),
+                      _SettingsLabel('API KEY (OPTIONAL FALLBACK)', cs),
                       const SizedBox(height: 8),
-                      _StyledTextField(
-                        controller: invidiousInstanceCtrl,
-                        hint: 'https://invidious.io',
-                        isDark: isDark,
-                        cs: cs,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _InvidiousStatus(
-                              isLoggedIn: settings.value!.invidiousUsername != null,
-                              username: settings.value!.invidiousUsername,
-                              isDark: isDark,
-                              cs: cs,
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: loginToInvidious,
-                            icon: const Icon(Icons.login_rounded, size: 18),
-                            label: Text(settings.value!.invidiousUsername != null ? 'Switch' : 'Login'),
-                          ),
-                        ],
+                      _StyledTextField(controller: lastFmKeyCtrl, hint: 'Paste your Last.fm API key', isDark: isDark, cs: cs, obscure: true),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Required for "Similar" mode. Get one at last.fm/api',
+                        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                       ),
                     ],
                   ),
                 ),
               ),
+
+              // ── INVIDIOUS ───────────────────────────────────────────────────
+              _SectionHeader(label: 'Invidious Account', isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SettingsLabel('INSTANCE URL', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(controller: invidiousInstanceCtrl, hint: 'https://invidious.io', isDark: isDark, cs: cs),
+                      const SizedBox(height: 12),
+                      _InvidiousStatusCard(
+                        isLoggedIn: settings.value!.invidiousUsername != null,
+                        username: settings.value!.invidiousUsername,
+                        instanceUrl: settings.value!.invidiousInstance,
+                        isDark: isDark,
+                        cs: cs,
+                        onLogin: loginToInvidious,
+                      ),
+                      if (settings.value!.invidiousUsername != null) ...[
+                        const SizedBox(height: 20),
+                        _SettingsLabel('YOUTUBE PLAYLISTS', cs),
+                        const SizedBox(height: 8),
+                        if (plLoading.value)
+                          const Center(child: Padding(padding: EdgeInsets.all(12.0), child: LinearProgressIndicator()))
+                        else if (invPlaylists.value == null || invPlaylists.value!.isEmpty)
+                          const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text('No playlists found', style: TextStyle(color: Colors.white24, fontSize: 13))))
+                        else
+                          ...invPlaylists.value!.map((pl) => _PlaylistSyncTile(
+                            title: pl['title'] ?? 'Playlist',
+                            count: pl['videoCount'] ?? 0,
+                            isDark: isDark,
+                            cs: cs,
+                            onSync: () async {
+                              final sc = ScaffoldMessenger.of(context);
+                              try {
+                                await api.syncInvidiousPlaylist(pl['playlistId'], instanceUrl: settings.value!.invidiousInstance, sid: settings.value?.invidiousSid);
+                                sc.showSnackBar(const SnackBar(content: Text('Playlist synced to Library ✓')));
+                              } catch (e) {
+                                sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+                              }
+                            },
+                          )),
+                        const SizedBox(height: 8),
+                        SizedBox(width: double.infinity, child: TextButton.icon(icon: const Icon(Icons.refresh_rounded, size: 18), label: const Text('Refresh List'), onPressed: loadInvidiousPlaylists)),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── SCROBBLING ─────────────────────────────────────
+              _SectionHeader(label: 'Scrobbling', isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SettingsLabel('LISTENBRAINZ TOKEN', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(controller: lbTokenCtrl, hint: 'Paste token here', isDark: isDark, cs: cs, obscure: true),
+                      const SizedBox(height: 14),
+                      _SettingsLabel('USERNAME (AUTO-DETECTED)', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(controller: lbUserCtrl, hint: 'your_username', isDark: isDark, cs: cs),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── PLAYER ───────────────────────────────────────────────────
+              _SectionHeader(label: 'Player', isDark: isDark, cs: cs),
               SliverToBoxAdapter(
                 child: _SettingsCard(
                   isDark: isDark,
@@ -277,21 +374,16 @@ class SettingsScreen extends HookConsumerWidget {
                     children: [
                       _SwitchTile(
                         label: 'High Quality Audio',
-                        subtitle:
-                            'Stream higher bitrate when available',
+                        subtitle: 'Stream higher bitrate when available',
                         value: settings.value!.highQuality,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value =
-                              settings.value!.copyWith(highQuality: v);
+                          settings.value = settings.value!.copyWith(highQuality: v);
                           api.updateSettings({'highQuality': v}).ignore();
                         },
                       ),
-                      Divider(
-                          color: isDark
-                              ? Colors.white12
-                              : Colors.black12),
+                      Divider(color: isDark ? Colors.white12 : Colors.black12),
                       _SwitchTile(
                         label: 'Cache Audio',
                         subtitle: 'Save tracks for offline listening',
@@ -299,15 +391,11 @@ class SettingsScreen extends HookConsumerWidget {
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value =
-                              settings.value!.copyWith(cacheEnabled: v);
+                          settings.value = settings.value!.copyWith(cacheEnabled: v);
                           api.updateSettings({'cacheEnabled': v}).ignore();
                         },
                       ),
-                      Divider(
-                          color: isDark
-                              ? Colors.white12
-                              : Colors.black12),
+                      Divider(color: isDark ? Colors.white12 : Colors.black12),
                       _SwitchTile(
                         label: 'Video Mode',
                         subtitle: 'Prefer high-quality video playback',
@@ -315,8 +403,7 @@ class SettingsScreen extends HookConsumerWidget {
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
-                          settings.value =
-                              settings.value!.copyWith(videoMode: v);
+                          settings.value = settings.value!.copyWith(videoMode: v);
                           api.updateSettings({'videoMode': v}).ignore();
                           ref.read(playerProvider.notifier).fetchSettings();
                         },
@@ -326,137 +413,31 @@ class SettingsScreen extends HookConsumerWidget {
                 ),
               ),
 
-              // ── Invidious Playlists ──────────────────────────────────────────
-              if (settings.value!.invidiousUsername != null) ...[
-                _SectionHeader(label: 'YouTube Playlists', isDark: isDark, cs: cs),
-                SliverToBoxAdapter(
-                  child: _SettingsCard(
-                    isDark: isDark,
-                    cs: cs,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (plLoading.value)
-                          const Center(child: LinearProgressIndicator())
-                        else if (invPlaylists.value == null || invPlaylists.value!.isEmpty)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: Text('No playlists found', style: TextStyle(color: Colors.white24)),
-                            ),
-                          )
-                        else
-                          ...invPlaylists.value!.map((pl) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(pl['title'] ?? 'Playlist', style: const TextStyle(color: Colors.white, fontSize: 14)),
-                            subtitle: Text('${pl['videoCount'] ?? 0} videos', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.sync_rounded),
-                              onPressed: () async {
-                                final sc = ScaffoldMessenger.of(context);
-                                try {
-                                  await api.syncInvidiousPlaylist(
-                                    pl['playlistId'],
-                                    instanceUrl: settings.value!.invidiousInstance,
-                                    sid: settings.value!.invidiousSid!,
-                                  );
-                                  sc.showSnackBar(const SnackBar(content: Text('Playlist synced to Library ✓')));
-                                } catch (e) {
-                                  sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
-                                }
-                              },
-                            ),
-                          )),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: TextButton.icon(
-                            icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text('Refresh Playlists'),
-                            onPressed: loadInvidiousPlaylists,
-                          ),
+              // ── SYSTEM ───────────────────────────────────────────────────
+              _SectionHeader(label: 'System', isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SettingsLabel('SERVER URL', cs),
+                      const SizedBox(height: 8),
+                      _StyledTextField(controller: serverCtrl, hint: 'http://192.168.x.x:7771', isDark: isDark, cs: cs),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.sync_rounded),
+                          label: const Text('Reconnect'),
+                          style: ElevatedButton.styleFrom(backgroundColor: cs.primary, foregroundColor: cs.onPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 14)),
+                          onPressed: () {
+                            final url = serverCtrl.text.trim();
+                            if (url.isNotEmpty) ref.read(serverIpProvider.notifier).update(url);
+                          },
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-
-              // ── ListenBrainz ─────────────────────────────────────────────
-              _SectionHeader(
-                  label: 'ListenBrainz', isDark: isDark, cs: cs),
-              SliverToBoxAdapter(
-                child: _SettingsCard(
-                  isDark: isDark,
-                  cs: cs,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _SettingsLabel('Username', cs),
-                      const SizedBox(height: 8),
-                      _StyledTextField(
-                          controller: lbUserCtrl,
-                          hint: 'your_username',
-                          isDark: isDark,
-                          cs: cs),
-                      const SizedBox(height: 14),
-                      _SettingsLabel('User Token', cs),
-                      const SizedBox(height: 8),
-                      _StyledTextField(
-                          controller: lbTokenCtrl,
-                          hint: 'paste token here',
-                          isDark: isDark,
-                          cs: cs,
-                          obscure: true),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Ollama AI ─────────────────────────────────────────────────
-              _SectionHeader(label: 'AI Queue', isDark: isDark, cs: cs),
-              SliverToBoxAdapter(
-                child: _SettingsCard(
-                  isDark: isDark,
-                  cs: cs,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _SwitchTile(
-                        label: 'Enable AI Queue',
-                        subtitle:
-                            'Use Ollama to suggest next tracks',
-                        value: settings.value!.ollamaEnabled,
-                        cs: cs,
-                        isDark: isDark,
-                        onChanged: (v) {
-                          settings.value = settings.value!
-                              .copyWith(ollamaEnabled: v);
-                          api.updateSettings({'ollamaEnabled': v}).ignore();
-                        },
                       ),
-                      if (settings.value!.ollamaEnabled) ...[
-                        Divider(
-                            color: isDark
-                                ? Colors.white12
-                                : Colors.black12),
-                        const SizedBox(height: 8),
-                        _SettingsLabel('Ollama URL', cs),
-                        const SizedBox(height: 8),
-                        _StyledTextField(
-                            controller: ollamaUrlCtrl,
-                            hint: 'http://localhost:11434',
-                            isDark: isDark,
-                            cs: cs),
-                        const SizedBox(height: 14),
-                        _SettingsLabel('Model', cs),
-                        const SizedBox(height: 8),
-                        _StyledTextField(
-                            controller: ollamaModelCtrl,
-                            hint: 'llama3',
-                            isDark: isDark,
-                            cs: cs),
-                      ],
                     ],
                   ),
                 ),
@@ -465,22 +446,14 @@ class SettingsScreen extends HookConsumerWidget {
               // Save button
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
                   child: ElevatedButton.icon(
-                    icon: saving.value
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.save_rounded),
-                    label: Text(saving.value ? 'Saving...' : 'Save Settings'),
+                    icon: saving.value ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_rounded),
+                    label: Text(saving.value ? 'Syncing...' : 'Save & Sync Settings'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: cs.primary,
-                      foregroundColor: cs.onPrimary,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       minimumSize: const Size(double.infinity, 52),
                     ),
@@ -494,29 +467,68 @@ class SettingsScreen extends HookConsumerWidget {
                   padding: const EdgeInsets.all(32),
                   child: Column(
                     children: [
-                      if (loading.value)
+                      if (loading.value) 
                         CircularProgressIndicator(color: cs.primary)
-                      else ...[
-                        Icon(Icons.cloud_off_rounded,
-                            size: 48,
-                            color: cs.onSurfaceVariant
-                                .withValues(alpha: 0.4)),
+                      else if (errorMsg.value != null) ...[
+                        Icon(Icons.error_outline_rounded, size: 48, color: cs.error),
                         const SizedBox(height: 16),
                         Text(
-                          'Enter a server URL above to connect.',
+                          errorMsg.value!,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: cs.onSurfaceVariant
-                                  .withValues(alpha: 0.6)),
+                          style: TextStyle(color: cs.error, fontWeight: FontWeight.w600),
                         ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: () => loadSettings(),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Try Again'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: cs.errorContainer,
+                            foregroundColor: cs.onErrorContainer,
+                          ),
+                        ),
+                      ] else ...[
+                        Icon(Icons.cloud_off_rounded, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                        const SizedBox(height: 16),
+                        Text('Enter a server URL below to connect.', textAlign: TextAlign.center, style: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
                       ],
+                      const SizedBox(height: 32),
+                      _SettingsCard(
+                        isDark: isDark,
+                        cs: cs,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _SettingsLabel('SERVER URL', cs),
+                            const SizedBox(height: 8),
+                            _StyledTextField(controller: serverCtrl, hint: 'http://192.168.x.x:7771', isDark: isDark, cs: cs),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                icon: const Icon(Icons.sync_rounded),
+                                label: const Text('Connect'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: cs.primary, 
+                                  foregroundColor: cs.onPrimary, 
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), 
+                                  padding: const EdgeInsets.symmetric(vertical: 14)
+                                ),
+                                onPressed: () {
+                                  final url = serverCtrl.text.trim();
+                                  if (url.isNotEmpty) ref.read(serverIpProvider.notifier).update(url);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
             ],
-
-            const SliverToBoxAdapter(child: SizedBox(height: 160)),
+            const SliverToBoxAdapter(child: SizedBox(height: 80)),
           ],
         ),
       ),
@@ -524,48 +536,222 @@ class SettingsScreen extends HookConsumerWidget {
   }
 }
 
-class _InvidiousStatus extends StatelessWidget {
-  const _InvidiousStatus({
-    required this.isLoggedIn,
-    this.username,
+class _QueueModeSelector extends StatelessWidget {
+  const _QueueModeSelector({
+    required this.currentMode,
     required this.isDark,
     required this.cs,
+    required this.onChanged,
   });
 
-  final bool isLoggedIn;
-  final String? username;
+  final String currentMode;
   final bool isDark;
   final ColorScheme cs;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          isLoggedIn ? 'Status: Logged in' : 'Status: Guest',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: isLoggedIn ? Colors.greenAccent : cs.onSurfaceVariant.withValues(alpha: 0.7),
-          ),
+        _ModeButton(
+          id: 'discover',
+          title: 'Discover',
+          subtitle: 'Random new music from iTunes & ListenBrainz',
+          icon: Icons.explore_rounded,
+          isActive: currentMode == 'discover' || currentMode == 'off',
+          onTap: () => onChanged('discover'),
+          isDark: isDark,
+          cs: cs,
         ),
-        if (isLoggedIn && username != null)
-          Text(
-            '@$username',
-            style: TextStyle(
-              fontSize: 12,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
+        const SizedBox(height: 8),
+        _ModeButton(
+          id: 'similar',
+          title: 'Similar',
+          subtitle: 'Same artist - same vibe via Last.fm',
+          icon: Icons.linear_scale_rounded,
+          isActive: currentMode == 'similar',
+          onTap: () => onChanged('similar'),
+          isDark: isDark,
+          cs: cs,
+        ),
+        const SizedBox(height: 8),
+        _ModeButton(
+          id: 'my_taste',
+          title: 'My Taste',
+          subtitle: 'Personalised AI powered suggestions',
+          icon: Icons.auto_awesome_rounded,
+          isActive: currentMode == 'my_taste',
+          onTap: () => onChanged('my_taste'),
+          isDark: isDark,
+          cs: cs,
+        ),
       ],
     );
   }
 }
 
+class _ModeButton extends StatelessWidget {
+  const _ModeButton({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+    required this.isDark,
+    required this.cs,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool isActive;
+  final VoidCallback onTap;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isActive ? cs.primary.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive ? cs.primary : (isDark ? Colors.white10 : Colors.black12),
+            width: isActive ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: isActive ? cs.primary : cs.onSurfaceVariant, size: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: isActive ? cs.primary : cs.onSurface, fontSize: 14)),
+                  Text(subtitle, style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6))),
+                ],
+              ),
+            ),
+            if (isActive) Icon(Icons.check_circle_rounded, color: cs.primary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InvidiousStatusCard extends StatelessWidget {
+  const _InvidiousStatusCard({
+    required this.isLoggedIn,
+    this.username,
+    this.instanceUrl,
+    required this.isDark,
+    required this.cs,
+    required this.onLogin,
+  });
+
+  final bool isLoggedIn;
+  final String? username;
+  final String? instanceUrl;
+  final bool isDark;
+  final ColorScheme cs;
+  final VoidCallback onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isLoggedIn ? Colors.greenAccent.withValues(alpha: 0.3) : Colors.transparent,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isLoggedIn ? Icons.account_circle_rounded : Icons.account_circle_outlined,
+            size: 32,
+            color: isLoggedIn ? Colors.greenAccent : cs.onSurfaceVariant.withValues(alpha: 0.5),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isLoggedIn ? '@$username' : 'Guest Mode',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: isLoggedIn ? Colors.white : cs.onSurfaceVariant,
+                    fontSize: 15,
+                  ),
+                ),
+                Text(
+                  isLoggedIn ? (instanceUrl?.isNotEmpty == true ? instanceUrl! : 'No Instance Saved') : 'Log in to sync playlists',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onLogin,
+            child: Text(isLoggedIn ? 'Switch' : 'Login'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaylistSyncTile extends StatelessWidget {
+  const _PlaylistSyncTile({
+    required this.title,
+    required this.count,
+    required this.isDark,
+    required this.cs,
+    required this.onSync,
+  });
+
+  final String title;
+  final int count;
+  final bool isDark;
+  final ColorScheme cs;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: isDark ? Colors.white10 : Colors.black12)),
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+        subtitle: Text('$count videos', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        trailing: IconButton(
+          icon: const Icon(Icons.sync_rounded, size: 20, color: Colors.white60),
+          onPressed: onSync,
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(
-      {required this.label, required this.isDark, required this.cs});
+  const _SectionHeader({required this.label, required this.isDark, required this.cs});
   final String label;
   final bool isDark;
   final ColorScheme cs;
@@ -581,9 +767,7 @@ class _SectionHeader extends StatelessWidget {
             fontSize: 12,
             fontWeight: FontWeight.w700,
             letterSpacing: 1,
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.4)
-                : cs.onSurfaceVariant,
+            color: isDark ? Colors.white.withValues(alpha: 0.4) : cs.onSurfaceVariant,
           ),
         ),
       ),
@@ -592,8 +776,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _SettingsCard extends StatelessWidget {
-  const _SettingsCard(
-      {required this.child, required this.isDark, required this.cs});
+  const _SettingsCard({required this.child, required this.isDark, required this.cs});
   final Widget child;
   final bool isDark;
   final ColorScheme cs;
@@ -607,9 +790,7 @@ class _SettingsCard extends StatelessWidget {
         color: isDark ? Colors.white.withValues(alpha: 0.05) : cs.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.06),
+          color: isDark ? Colors.white.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.06),
           width: 0.5,
         ),
       ),
@@ -625,11 +806,7 @@ class _SettingsLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(label,
-        style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: cs.onSurfaceVariant));
+    return Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant));
   }
 }
 
@@ -652,22 +829,14 @@ class _StyledTextField extends StatelessWidget {
     return TextField(
       controller: controller,
       obscureText: obscure,
-      style: TextStyle(
-          color: isDark ? Colors.white : cs.onSurface, fontSize: 15),
+      style: TextStyle(color: isDark ? Colors.white : cs.onSurface, fontSize: 15),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle:
-            TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+        hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
         filled: true,
-        fillColor: isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : cs.surfaceContainerHigh,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        fillColor: isDark ? Colors.white.withValues(alpha: 0.06) : cs.surfaceContainerHigh,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         isDense: true,
       ),
     );
@@ -698,22 +867,12 @@ class _SwitchTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : cs.onSurface,
-                  )),
-              Text(subtitle,
-                  style: TextStyle(
-                      fontSize: 12, color: cs.onSurfaceVariant)),
+              Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? Colors.white : cs.onSurface)),
+              Text(subtitle, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
             ],
           ),
         ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          activeThumbColor: cs.primary,
-        ),
+        Switch(value: value, onChanged: onChanged, activeThumbColor: cs.primary),
       ],
     );
   }
