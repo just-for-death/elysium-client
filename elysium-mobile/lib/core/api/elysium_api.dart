@@ -262,7 +262,7 @@ class ElysiumApi {
 
   Future<Map<String, dynamic>> validateListenBrainzToken(String token) async {
     return await _get(
-      '$_apiBase/listenbrainz/validate?token=${Uri.encodeComponent(token)}',
+      '$baseUrl/api/v1/listenbrainz/validate?token=${Uri.encodeComponent(token)}',
     ) as Map<String, dynamic>;
   }
 

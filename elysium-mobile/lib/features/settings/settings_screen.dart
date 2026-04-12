@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
 import '../../core/models/models.dart';
+import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
 
 class SettingsScreen extends HookConsumerWidget {
@@ -176,7 +177,7 @@ class SettingsScreen extends HookConsumerWidget {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (ctx) => StatefulHookConsumerWidget(
+        builder: (ctx) => HookConsumer(
           builder: (context, ref, _) {
             final pvLoading = useState(true);
             final pvPlaylist = useState<Playlist?>(null);
@@ -880,6 +881,7 @@ class _PlaylistSyncTile extends StatelessWidget {
     required this.isDark,
     required this.cs,
     required this.onSync,
+    required this.onTap,
   });
 
   final String title;
