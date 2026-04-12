@@ -351,4 +351,11 @@ class ElysiumApi {
       },
     });
   }
+ 
+  Future<dynamic> testOllama(String url) async {
+    return _request('GET', '$_lib/ollama', headers: {
+      'x-ollama-target': url,
+      'x-ollama-path': '/api/tags',
+    });
+  }
 }

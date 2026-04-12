@@ -45,6 +45,13 @@ class SettingsScreen extends HookConsumerWidget {
     final loading = useState(settings == null);
     final errorMsg = useState<String?>(null);
 
+    // Testing states
+    final testingLB = useState(false);
+    final testingLastFm = useState(false);
+    final testingOllama = useState(false);
+    final testingServer = useState(false);
+    final testingInvidious = useState(false);
+
     Future<void> loadSettings() async {
       loading.value = true;
       errorMsg.value = null;
@@ -107,6 +114,147 @@ class SettingsScreen extends HookConsumerWidget {
       }
       return null;
     }, [settings?.invidiousSid, settings?.listenBrainzUsername]);
+
+    Future<void> testAndSaveLB() async {
+      final token = lbTokenCtrl.text.trim();
+      if (token.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a ListenBrainz token')));
+        return;
+      }
+      testingLB.value = true;
+      try {
+        final res = await api.validateListenBrainzToken(token);
+        final username = res['username']?.toString() ?? '';
+        lbUserCtrl.text = username;
+
+        await ref.read(settingsProvider.notifier).update({
+          'listenBrainzToken': token,
+          'listenBrainzUsername': username,
+        });
+
+        await loadListenBrainzPlaylists();
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ListenBrainz connected and saved! ✓')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ListenBrainz test failed: $e')));
+        }
+      } finally {
+        testingLB.value = false;
+      }
+    }
+
+    Future<void> testAndSaveLastFm() async {
+      final key = lastFmKeyCtrl.text.trim();
+      if (key.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a Last.fm API Key')));
+        return;
+      }
+      testingLastFm.value = true;
+      try {
+        await api.validateLastFmKey(key);
+        await ref.read(settingsProvider.notifier).update({'lastFmApiKey': key});
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Last.fm connected and saved! ✓')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Last.fm test failed: $e')));
+        }
+      } finally {
+        testingLastFm.value = false;
+      }
+    }
+
+    Future<void> testAndSaveServer() async {
+      final ip = serverCtrl.text.trim();
+      final secret = apiSecretCtrl.text.trim();
+      if (ip.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a Server IP')));
+        return;
+      }
+      testingServer.value = true;
+      try {
+        // Update local IP first so the API uses it
+        await ref.read(serverIpProvider.notifier).update(ip);
+        
+        // Try to fetch settings with the (potentially new) secret
+        final testApi = ElysiumApi(ip, apiSecret: secret);
+        await testApi.getSettings();
+        
+        // Save the secret if successful
+        await ref.read(settingsProvider.notifier).update({'apiSecret': secret});
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Server connection verified and saved! ✓')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connection failed: $e')));
+        }
+      } finally {
+        testingServer.value = false;
+      }
+    }
+
+    Future<void> testAndSaveOllama() async {
+      final url = ollamaUrlCtrl.text.trim();
+      final model = ollamaModelCtrl.text.trim();
+      if (url.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an Ollama URL')));
+        return;
+      }
+      testingOllama.value = true;
+      try {
+        // We use the elysium-server relay to test reachability
+        await api.testOllama(url);
+        
+        await ref.read(settingsProvider.notifier).update({
+          'ollamaUrl': url,
+          'ollamaModel': model,
+        });
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ollama engine verified and saved! ✓')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ollama connection failed: $e')));
+        }
+      } finally {
+        testingOllama.value = false;
+      }
+    }
+
+    Future<void> testAndSaveInvidious() async {
+      final instance = invidiousInstanceCtrl.text.trim();
+      if (instance.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an Invidious Instance URL')));
+        return;
+      }
+      testingInvidious.value = true;
+      try {
+        final sanitized = Uri.parse(instance).origin;
+        invidiousInstanceCtrl.text = sanitized;
+
+        // Try to fetch trending or something light
+        await api.invidiousSearch('test', instanceUrl: sanitized);
+
+        await ref.read(settingsProvider.notifier).update({'invidiousInstance': sanitized});
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invidious instance verified and saved! ✓')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invidious instance failed: $e')));
+        }
+      } finally {
+        testingInvidious.value = false;
+      }
+    }
 
     Future<void> saveServerSettings() async {
       if (settings == null) return;
@@ -529,6 +677,15 @@ class SettingsScreen extends HookConsumerWidget {
                         'This must match the API_SECRET on your server.',
                         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                       ),
+                      const SizedBox(height: 16),
+                      _TestSaveButton(
+                        label: 'Test & Save Connection',
+                        isTesting: testingServer.value,
+                        onTap: testAndSaveServer,
+                        cs: cs,
+                        isDark: isDark,
+                        color: Colors.tealAccent,
+                      ),
                     ],
                   ),
                 ),
@@ -589,6 +746,15 @@ class SettingsScreen extends HookConsumerWidget {
                         _SettingsLabel('MODEL', cs),
                         const SizedBox(height: 8),
                         _StyledTextField(controller: ollamaModelCtrl, hint: 'llama3', isDark: isDark, cs: cs),
+                        const SizedBox(height: 16),
+                        _TestSaveButton(
+                          label: 'Test & Save Ollama',
+                          isTesting: testingOllama.value,
+                          onTap: testAndSaveOllama,
+                          cs: cs,
+                          isDark: isDark,
+                          color: Colors.blueAccent,
+                        ),
                       ],
                     ),
                   ),
@@ -623,6 +789,15 @@ class SettingsScreen extends HookConsumerWidget {
                         'Required for "Similar" mode. Get one at last.fm/api',
                         style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                       ),
+                      const SizedBox(height: 16),
+                      _TestSaveButton(
+                        label: 'Test & Save Last.fm',
+                        isTesting: testingLastFm.value,
+                        onTap: testAndSaveLastFm,
+                        cs: cs,
+                        isDark: isDark,
+                        color: const Color(0xFFD41113),
+                      ),
                     ],
                   ),
                 ),
@@ -641,7 +816,16 @@ class SettingsScreen extends HookConsumerWidget {
                       _SettingsLabel('INSTANCE URL', cs),
                       const SizedBox(height: 8),
                       _StyledTextField(controller: invidiousInstanceCtrl, hint: 'https://invidious.io', isDark: isDark, cs: cs),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
+                      _TestSaveButton(
+                        label: 'Verify & Save Instance',
+                        isTesting: testingInvidious.value,
+                        onTap: testAndSaveInvidious,
+                        cs: cs,
+                        isDark: isDark,
+                        color: Colors.redAccent,
+                      ),
+                      const SizedBox(height: 16),
                       _InvidiousStatusCard(
                         isLoggedIn: settings.invidiousUsername != null,
                         username: settings.invidiousUsername,
@@ -700,6 +884,15 @@ class SettingsScreen extends HookConsumerWidget {
                       _SettingsLabel('USERNAME (AUTO-DETECTED)', cs),
                       const SizedBox(height: 8),
                       _StyledTextField(controller: lbUserCtrl, hint: 'your_username', isDark: isDark, cs: cs),
+                      const SizedBox(height: 16),
+                      _TestSaveButton(
+                        label: 'Test & Sync ListenBrainz',
+                        isTesting: testingLB.value,
+                        onTap: testAndSaveLB,
+                        cs: cs,
+                        isDark: isDark,
+                        color: const Color(0xFFEB743B),
+                      ),
 
                       if (settings.listenBrainzUsername != null && settings.listenBrainzUsername!.isNotEmpty) ...[
                         const SizedBox(height: 20),
@@ -1429,6 +1622,70 @@ class _ToolButton extends StatelessWidget {
                   color: isDark ? Colors.white70 : cs.onSurfaceVariant,
                 ),
                 textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+class _TestSaveButton extends StatelessWidget {
+  const _TestSaveButton({
+    required this.label,
+    required this.isTesting,
+    required this.onTap,
+    required this.cs,
+    required this.isDark,
+    this.color,
+  });
+
+  final String label;
+  final bool isTesting;
+  final VoidCallback onTap;
+  final ColorScheme cs;
+  final bool isDark;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColor = color ?? cs.primary;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isTesting ? null : onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          decoration: BoxDecoration(
+            color: activeColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: activeColor.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isTesting)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: activeColor,
+                  ),
+                )
+              else
+                Icon(Icons.bolt_rounded, size: 16, color: activeColor),
+              const SizedBox(width: 10),
+              Text(
+                isTesting ? 'TESTING...' : label.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
+                  color: activeColor,
+                ),
               ),
             ],
           ),
