@@ -260,6 +260,23 @@ class ElysiumApi {
     );
   }
 
+  Future<Map<String, dynamic>> validateListenBrainzToken(String token) async {
+    return await _get(
+      '$_apiBase/listenbrainz/validate?token=${Uri.encodeComponent(token)}',
+    ) as Map<String, dynamic>;
+  }
+
+  Future<Playlist> getInvidiousPlaylistDetail(String playlistId, {required String instanceUrl, String? sid}) async {
+    final data = await _get(
+      '$_invidious/playlists/$playlistId',
+      headers: {
+        'x-invidious-instance': instanceUrl,
+        if (sid != null) 'x-invidious-sid': sid,
+      },
+    );
+    return Playlist.fromJson(data as Map<String, dynamic>);
+  }
+
   // ── AI Queue ──────────────────────────────────────────────────────────────
   Future<Track?> generateAIQueue(Track current) async {
     try {

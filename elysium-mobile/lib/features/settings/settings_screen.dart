@@ -109,6 +109,18 @@ class SettingsScreen extends HookConsumerWidget {
         });
         invidiousInstanceCtrl.text = sanitizedInstance;
         settings.value = updated;
+        
+        // Auto-validate LB if token changed
+        if (lbTokenCtrl.text.trim().isNotEmpty) {
+          try {
+            final lb = await api.validateListenBrainzToken(lbTokenCtrl.text.trim());
+            if (lb['username'] != null) {
+              lbUserCtrl.text = lb['username'];
+              await api.updateSettings({'listenBrainzUsername': lb['username']});
+            }
+          } catch (_) {}
+        }
+
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('All settings synced to server ✓')),
@@ -123,6 +135,151 @@ class SettingsScreen extends HookConsumerWidget {
       } finally {
         saving.value = false;
       }
+    }
+
+    void showTrackMenu(Track track) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF151515) : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(track.artwork ?? '', width: 44, height: 44, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white12, child: const Icon(Icons.music_note_rounded))),
+                ),
+                title: Text(track.title, style: const TextStyle(fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(track.artist, style: const TextStyle(fontSize: 12, color: Colors.white54), maxLines: 1),
+              ),
+              const Divider(color: Colors.white10),
+              ListTile(leading: const Icon(Icons.playlist_play_rounded), title: const Text('Play Next'), onTap: () { ref.read(playerProvider.notifier).playNext(track); Navigator.pop(ctx); }),
+              ListTile(leading: const Icon(Icons.queue_music_rounded), title: const Text('Add to Queue'), onTap: () { ref.read(playerProvider.notifier).addToQueue(track); Navigator.pop(ctx); }),
+              ListTile(leading: const Icon(Icons.playlist_add_rounded), title: const Text('Add to Playlist'), onTap: () { /* TODO: Local Playlist selection */ Navigator.pop(ctx); }),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      );
+    }
+
+    void showPlaylistPreview(String id, String title) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => StatefulHookConsumerWidget(
+          builder: (context, ref, _) {
+            final pvLoading = useState(true);
+            final pvPlaylist = useState<Playlist?>(null);
+
+            useEffect(() {
+              api.getInvidiousPlaylistDetail(id, 
+                instanceUrl: settings.value!.invidiousInstance, 
+                sid: settings.value?.invidiousSid
+              ).then((p) {
+                pvPlaylist.value = p;
+                pvLoading.value = false;
+              }).catchError((e) {
+                pvLoading.value = false;
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+              });
+              return null;
+            }, []);
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              builder: (_, scrollCtrl) => Container(
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F0F0F) : Colors.white,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          if (!pvLoading.value && pvPlaylist.value != null) ...[
+                            IconButton(
+                              icon: const Icon(Icons.play_circle_fill_rounded, size: 32, color: Colors.white),
+                              onPressed: () => ref.read(playerProvider.notifier).playAll(pvPlaylist.value!.videos),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_to_photos_rounded),
+                              onPressed: () => ref.read(playerProvider.notifier).addAllToQueue(pvPlaylist.value!.videos),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: pvLoading.value 
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView.builder(
+                            controller: scrollCtrl,
+                            itemCount: pvPlaylist.value?.videos.length ?? 0,
+                            itemBuilder: (context, i) {
+                              final t = pvPlaylist.value!.videos[i];
+                              return ListTile(
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(t.artwork ?? '', width: 44, height: 44, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white12, child: const Icon(Icons.music_note_rounded))),
+                                ),
+                                title: Text(t.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
+                                subtitle: Text(t.artist, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                                trailing: IconButton(icon: const Icon(Icons.more_vert_rounded, size: 20), onPressed: () => showTrackMenu(t)),
+                                onTap: () => ref.read(playerProvider.notifier).playTrackNow(t),
+                              );
+                            },
+                          ),
+                    ),
+                    if (!pvLoading.value && pvPlaylist.value != null)
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.sync_rounded),
+                            label: const Text('Sync Entire Playlist to Library'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () async {
+                              Navigator.pop(ctx);
+                              try {
+                                await api.syncInvidiousPlaylist(id, instanceUrl: settings.value!.invidiousInstance, sid: settings.value?.invidiousSid);
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Syncing to Library...')));
+                              } catch (e) {
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }
+        ),
+      );
     }
 
     Future<void> loginToInvidious() async {
@@ -334,6 +491,7 @@ class SettingsScreen extends HookConsumerWidget {
                                 sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
                               }
                             },
+                            onTap: () => showPlaylistPreview(pl['playlistId'], pl['title'] ?? 'Playlist'),
                           )),
                         const SizedBox(height: 8),
                         SizedBox(width: double.infinity, child: TextButton.icon(icon: const Icon(Icons.refresh_rounded, size: 18), label: const Text('Refresh List'), onPressed: loadInvidiousPlaylists)),
@@ -729,6 +887,7 @@ class _PlaylistSyncTile extends StatelessWidget {
   final bool isDark;
   final ColorScheme cs;
   final VoidCallback onSync;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -738,6 +897,7 @@ class _PlaylistSyncTile extends StatelessWidget {
         border: Border(bottom: BorderSide(color: isDark ? Colors.white10 : Colors.black12)),
       ),
       child: ListTile(
+        onTap: onTap,
         contentPadding: EdgeInsets.zero,
         title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
         subtitle: Text('$count videos', style: const TextStyle(color: Colors.white54, fontSize: 11)),

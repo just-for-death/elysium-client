@@ -161,6 +161,41 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
   }
 
+  void playTrackNow(Track track) {
+    state = state.copyWith(queue: [track], currentIndex: 0);
+    playIndex(0);
+  }
+
+  void playNext(Track track) {
+    if (state.queue.isEmpty) {
+      playTrackNow(track);
+      return;
+    }
+    final newQueue = List<Track>.from(state.queue);
+    newQueue.insert(state.currentIndex + 1, track);
+    state = state.copyWith(queue: newQueue);
+  }
+
+  void addToQueue(Track track) {
+    state = state.copyWith(queue: [...state.queue, track]);
+    if (state.currentIndex == -1) {
+      playIndex(0);
+    }
+  }
+
+  void addAllToQueue(List<Track> tracks) {
+    final wasEmpty = state.queue.isEmpty;
+    state = state.copyWith(queue: [...state.queue, ...tracks]);
+    if (wasEmpty) {
+      playIndex(0);
+    }
+  }
+
+  void playAll(List<Track> tracks) {
+    state = state.copyWith(queue: tracks, currentIndex: 0);
+    playIndex(0);
+  }
+
   Future<void> playIndex(int index) async {
     if (index < 0 || index >= state.queue.length) return;
     state = state.copyWith(currentIndex: index);
