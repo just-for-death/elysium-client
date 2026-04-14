@@ -81,6 +81,38 @@ class Album {
       };
 }
 
+class LinkedDevice {
+  final String code;
+  final String name;
+  final String platform;
+  final String pairedAt;
+  final String lastSyncAt;
+
+  const LinkedDevice({
+    required this.code,
+    required this.name,
+    required this.platform,
+    required this.pairedAt,
+    required this.lastSyncAt,
+  });
+
+  factory LinkedDevice.fromJson(Map<String, dynamic> j) => LinkedDevice(
+        code: j['code']?.toString() ?? '',
+        name: j['name']?.toString() ?? '',
+        platform: j['platform']?.toString() ?? 'other',
+        pairedAt: j['pairedAt']?.toString() ?? '',
+        lastSyncAt: j['lastSyncAt']?.toString() ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'name': name,
+        'platform': platform,
+        'pairedAt': pairedAt,
+        'lastSyncAt': lastSyncAt,
+      };
+}
+
 class ElysiumSettings {
   final bool ollamaEnabled;
   final String ollamaUrl;
@@ -96,6 +128,28 @@ class ElysiumSettings {
   final String? invidiousSid;
   final String? invidiousUsername;
   final bool videoMode;
+  // Missing settings from server
+  final bool sponsorBlock;
+  final List<String> sponsorBlockCategories;
+  final bool analytics;
+  final String? exportFileName;
+  final String? exportLastDate;
+  final String? gotifyUrl;
+  final String? gotifyToken;
+  final bool gotifyEnabled;
+  final bool syncEnabled;
+  final int syncInterval;
+  final String? lastSyncAt;
+  final List<LinkedDevice> linkedDevices;
+  // ListenBrainz additional settings
+  final bool listenBrainzEnabled;
+  final bool listenBrainzPlayingNow;
+  final int listenBrainzScrobblePercent;
+  final int listenBrainzScrobbleMaxSeconds;
+  // Invidious additional settings
+  final String invidiousPlaylistPrivacy;
+  final bool invidiousAutoPush;
+  final Map<String, String> invidiousPlaylistMappings;
 
   const ElysiumSettings({
     this.ollamaEnabled = false,
@@ -112,6 +166,25 @@ class ElysiumSettings {
     this.invidiousSid,
     this.invidiousUsername,
     this.videoMode = false,
+    this.sponsorBlock = false,
+    this.sponsorBlockCategories = const [],
+    this.analytics = false,
+    this.exportFileName,
+    this.exportLastDate,
+    this.gotifyUrl,
+    this.gotifyToken,
+    this.gotifyEnabled = false,
+    this.syncEnabled = false,
+    this.syncInterval = 30,
+    this.lastSyncAt,
+    this.linkedDevices = const [],
+    this.listenBrainzEnabled = false,
+    this.listenBrainzPlayingNow = false,
+    this.listenBrainzScrobblePercent = 50,
+    this.listenBrainzScrobbleMaxSeconds = 240,
+    this.invidiousPlaylistPrivacy = 'private',
+    this.invidiousAutoPush = false,
+    this.invidiousPlaylistMappings = const {},
   });
 
   factory ElysiumSettings.fromJson(Map<String, dynamic> j) {
@@ -121,6 +194,28 @@ class ElysiumSettings {
       if (v is String) return v.toLowerCase() == 'true' || v == '1';
       if (v is int) return v == 1;
       return def;
+    }
+
+    List<String> toStringList(dynamic v) {
+      if (v == null) return [];
+      if (v is List) return v.map((e) => e.toString()).toList();
+      return [];
+    }
+
+    Map<String, String> toStringMap(dynamic v) {
+      if (v == null) return {};
+      if (v is Map) {
+        return v.map((k, val) => MapEntry(k.toString(), val.toString()));
+      }
+      return {};
+    }
+
+    List<LinkedDevice> parseLinkedDevices(dynamic v) {
+      if (v == null) return [];
+      if (v is List) {
+        return v.map((d) => LinkedDevice.fromJson(d as Map<String, dynamic>)).toList();
+      }
+      return [];
     }
 
     return ElysiumSettings(
@@ -138,6 +233,25 @@ class ElysiumSettings {
       invidiousSid: j['invidiousSid']?.toString(),
       invidiousUsername: j['invidiousUsername']?.toString(),
       videoMode: toBool(j['videoMode'], false),
+      sponsorBlock: toBool(j['sponsorBlock'], false),
+      sponsorBlockCategories: toStringList(j['sponsorBlockCategories']),
+      analytics: toBool(j['analytics'], false),
+      exportFileName: j['exportFileName']?.toString(),
+      exportLastDate: j['exportLastDate']?.toString(),
+      gotifyUrl: j['gotifyUrl']?.toString(),
+      gotifyToken: j['gotifyToken']?.toString(),
+      gotifyEnabled: toBool(j['gotifyEnabled'], false),
+      syncEnabled: toBool(j['syncEnabled'], false),
+      syncInterval: j['syncInterval'] is int ? j['syncInterval'] : 30,
+      lastSyncAt: j['lastSyncAt']?.toString(),
+      linkedDevices: parseLinkedDevices(j['linkedDevices']),
+      listenBrainzEnabled: toBool(j['listenBrainzEnabled'], false),
+      listenBrainzPlayingNow: toBool(j['listenBrainzPlayingNow'], false),
+      listenBrainzScrobblePercent: j['listenBrainzScrobblePercent'] is int ? j['listenBrainzScrobblePercent'] : 50,
+      listenBrainzScrobbleMaxSeconds: j['listenBrainzScrobbleMaxSeconds'] is int ? j['listenBrainzScrobbleMaxSeconds'] : 240,
+      invidiousPlaylistPrivacy: j['invidiousPlaylistPrivacy']?.toString() ?? 'private',
+      invidiousAutoPush: toBool(j['invidiousAutoPush'], false),
+      invidiousPlaylistMappings: toStringMap(j['invidiousPlaylistMappings']),
     );
   }
 
@@ -156,6 +270,25 @@ class ElysiumSettings {
         if (invidiousSid != null) 'invidiousSid': invidiousSid,
         if (invidiousUsername != null) 'invidiousUsername': invidiousUsername,
         'videoMode': videoMode,
+        'sponsorBlock': sponsorBlock,
+        'sponsorBlockCategories': sponsorBlockCategories,
+        'analytics': analytics,
+        if (exportFileName != null) 'exportFileName': exportFileName,
+        if (exportLastDate != null) 'exportLastDate': exportLastDate,
+        if (gotifyUrl != null) 'gotifyUrl': gotifyUrl,
+        if (gotifyToken != null) 'gotifyToken': gotifyToken,
+        'gotifyEnabled': gotifyEnabled,
+        'syncEnabled': syncEnabled,
+        'syncInterval': syncInterval,
+        if (lastSyncAt != null) 'lastSyncAt': lastSyncAt,
+        'linkedDevices': linkedDevices.map((d) => d.toJson()).toList(),
+        'listenBrainzEnabled': listenBrainzEnabled,
+        'listenBrainzPlayingNow': listenBrainzPlayingNow,
+        'listenBrainzScrobblePercent': listenBrainzScrobblePercent,
+        'listenBrainzScrobbleMaxSeconds': listenBrainzScrobbleMaxSeconds,
+        'invidiousPlaylistPrivacy': invidiousPlaylistPrivacy,
+        'invidiousAutoPush': invidiousAutoPush,
+        'invidiousPlaylistMappings': invidiousPlaylistMappings,
       };
 
   ElysiumSettings copyWith({
@@ -175,6 +308,25 @@ class ElysiumSettings {
     String? invidiousUsername,
     bool clearInvidiousUsername = false,
     bool? videoMode,
+    bool? sponsorBlock,
+    List<String>? sponsorBlockCategories,
+    bool? analytics,
+    String? exportFileName,
+    String? exportLastDate,
+    String? gotifyUrl,
+    String? gotifyToken,
+    bool? gotifyEnabled,
+    bool? syncEnabled,
+    int? syncInterval,
+    String? lastSyncAt,
+    List<LinkedDevice>? linkedDevices,
+    bool? listenBrainzEnabled,
+    bool? listenBrainzPlayingNow,
+    int? listenBrainzScrobblePercent,
+    int? listenBrainzScrobbleMaxSeconds,
+    String? invidiousPlaylistPrivacy,
+    bool? invidiousAutoPush,
+    Map<String, String>? invidiousPlaylistMappings,
   }) =>
       ElysiumSettings(
         ollamaEnabled: ollamaEnabled ?? this.ollamaEnabled,
@@ -191,5 +343,24 @@ class ElysiumSettings {
         invidiousSid: clearInvidiousSid ? null : (invidiousSid ?? this.invidiousSid),
         invidiousUsername: clearInvidiousUsername ? null : (invidiousUsername ?? this.invidiousUsername),
         videoMode: videoMode ?? this.videoMode,
+        sponsorBlock: sponsorBlock ?? this.sponsorBlock,
+        sponsorBlockCategories: sponsorBlockCategories ?? this.sponsorBlockCategories,
+        analytics: analytics ?? this.analytics,
+        exportFileName: exportFileName ?? this.exportFileName,
+        exportLastDate: exportLastDate ?? this.exportLastDate,
+        gotifyUrl: gotifyUrl ?? this.gotifyUrl,
+        gotifyToken: gotifyToken ?? this.gotifyToken,
+        gotifyEnabled: gotifyEnabled ?? this.gotifyEnabled,
+        syncEnabled: syncEnabled ?? this.syncEnabled,
+        syncInterval: syncInterval ?? this.syncInterval,
+        lastSyncAt: lastSyncAt ?? this.lastSyncAt,
+        linkedDevices: linkedDevices ?? this.linkedDevices,
+        listenBrainzEnabled: listenBrainzEnabled ?? this.listenBrainzEnabled,
+        listenBrainzPlayingNow: listenBrainzPlayingNow ?? this.listenBrainzPlayingNow,
+        listenBrainzScrobblePercent: listenBrainzScrobblePercent ?? this.listenBrainzScrobblePercent,
+        listenBrainzScrobbleMaxSeconds: listenBrainzScrobbleMaxSeconds ?? this.listenBrainzScrobbleMaxSeconds,
+        invidiousPlaylistPrivacy: invidiousPlaylistPrivacy ?? this.invidiousPlaylistPrivacy,
+        invidiousAutoPush: invidiousAutoPush ?? this.invidiousAutoPush,
+        invidiousPlaylistMappings: invidiousPlaylistMappings ?? this.invidiousPlaylistMappings,
       );
 }

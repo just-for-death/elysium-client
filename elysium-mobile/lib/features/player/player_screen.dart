@@ -206,7 +206,7 @@ class PlayerScreen extends HookConsumerWidget {
                   ),
                 ),
 
-                // Tab pills
+                // Tab pills with more visual appeal
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Row(
@@ -214,10 +214,11 @@ class PlayerScreen extends HookConsumerWidget {
                     children: _PlayerTab.values
                         .map((t) => Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: GlassPill(
+                              child: _PlayerTabPill(
                                 label: _tabLabel(t),
                                 selected: tab.value == t,
                                 onTap: () => tab.value = t,
+                                cs: cs,
                               ),
                             ))
                         .toList(),
@@ -314,34 +315,52 @@ class PlayerScreen extends HookConsumerWidget {
                   ),
                 ),
 
-                // Progress bar
+                // Progress bar with improved interaction
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 4,
-                          thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 6),
-                          overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 14),
-                          activeTrackColor: Colors.white,
-                          inactiveTrackColor:
-                              Colors.white.withValues(alpha: 0.25),
-                          thumbColor: Colors.white,
-                        ),
-                        child: Slider(
-                          value: progress.clamp(0.0, 1.0),
-                          onChanged: (v) {
-                            final target = Duration(
-                                milliseconds: (v *
-                                        player.duration.inMilliseconds)
-                                    .toInt());
-                            ref
-                                .read(playerProvider.notifier)
-                                .seekTo(target);
-                          },
+                      GestureDetector(
+                        onHorizontalDragUpdate: (details) {
+                          // Seek while dragging for immediate feedback
+                          final box = context.findRenderObject() as RenderBox;
+                          final width = box.size.width;
+                          final dx = details.localPosition.dx.clamp(0.0, width);
+                          final fraction = dx / width;
+                          final target = Duration(
+                            milliseconds: (fraction * player.duration.inMilliseconds).toInt()
+                          );
+                          ref.read(playerProvider.notifier).seekTo(target);
+                        },
+                        child: Container(
+                          height: 30,
+                          alignment: Alignment.center,
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 4,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6),
+                              overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 14),
+                              activeTrackColor: Colors.white,
+                              inactiveTrackColor:
+                                  Colors.white.withValues(alpha: 0.25),
+                              thumbColor: Colors.white,
+                              trackShape: const RoundedRectSliderTrackShape(),
+                            ),
+                            child: Slider(
+                              value: progress.clamp(0.0, 1.0),
+                              onChanged: (v) {
+                                final target = Duration(
+                                    milliseconds: (v *
+                                            player.duration.inMilliseconds)
+                                        .toInt());
+                                ref
+                                    .read(playerProvider.notifier)
+                                    .seekTo(target);
+                              },
+                            ),
+                          ),
                         ),
                       ),
                       Row(
@@ -353,10 +372,11 @@ class PlayerScreen extends HookConsumerWidget {
                                   color: Colors.white60,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600)),
+                          // Duration indicator
                           Text(
-                              '-${_fmt(player.duration - player.position)}',
+                            _fmt(player.duration),
                               style: const TextStyle(
-                                  color: Colors.white60,
+                                  color: Colors.white38,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600)),
                         ],

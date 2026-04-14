@@ -67,11 +67,23 @@ class SearchScreen extends HookConsumerWidget {
           () async {
             loading.value = true;
             try {
-              final instance = (settings?.invidiousInstance.isNotEmpty ?? false)
-                  ? settings!.invidiousInstance
-                  : 'https://yt.ikiagi.loseyourip.com';
-
               if (searchMode.value == 'invidious') {
+                final instance = (settings?.invidiousInstance.isNotEmpty ?? false)
+                    ? settings!.invidiousInstance
+                    : '';
+
+                if (instance.isEmpty) {
+                  // Show error if no instance configured
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please configure an Invidious instance in Settings')),
+                    );
+                  }
+                  loading.value = false;
+                  results.value = [];
+                  return;
+                }
+
                 final tracks = await api.invidiousSearch(query.value,
                     instanceUrl: instance);
                 results.value = tracks

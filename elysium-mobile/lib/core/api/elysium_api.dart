@@ -8,13 +8,30 @@ import '../models/track.dart';
 /// Complete Dart port of ElysiumApi.ts.
 /// Every method maps 1:1 to the REST endpoints on the Elysium server.
 class ElysiumApi {
+  ElysiumApi(this.baseUrl, {this.apiSecret = ''});
+
+  // ── Error types for better handling ─────────────────────────────────────────
+  static const errTimeout  = 'timeout';
+  static const errNetwork  = 'network';
+  static const errServer   = 'server';
+  static const errNotFound = 'not_found';
+  static const errUnknown = 'unknown';
+
   final String baseUrl;
   final String apiSecret;
 
-  ElysiumApi(this.baseUrl, {this.apiSecret = ''});
-
   String get _lib => '$baseUrl/api/v1/library';
   String get _invidious => '$_lib/invidious';
+
+  /// Test server connection and return status
+  Future<({bool ok, String message})> testConnection() async {
+    try {
+      final data = await _get('$baseUrl/api/countryCode');
+      return (ok: true, message: 'Connected');
+    } catch (e) {
+      return (ok: false, message: e.toString().replaceAll('Exception: ', ''));
+    }
+  }
 
   // ── Core fetch helper ─────────────────────────────────────────────────────
   Future<dynamic> _request(
@@ -213,12 +230,14 @@ class ElysiumApi {
     );
     if (data is! List) return [];
     return data.map((v) => Track(
-      id: v['videoId'] ?? '',
-      videoId: v['videoId'],
+      id: v['videoId'] ?? v['id'] ?? '',
+      videoId: v['videoId']?.toString(),
       title: v['title'] ?? '',
-      artist: v['author'] ?? '',
-      artwork: v['videoThumbnails']?[0]?['url'],
-      duration: v['lengthSeconds'],
+      artist: v['author'] ?? v['artist'] ?? '',
+      artwork: v['videoThumbnails'] != null && (v['videoThumbnails'] as List).isNotEmpty
+          ? v['videoThumbnails'][0]['url']
+          : (v['thumbnails'] != null && (v['thumbnails'] as List).isNotEmpty ? v['thumbnails'][0]['url'] : null),
+      duration: v['lengthSeconds'] ?? v['duration'],
     )).toList();
   }
 
@@ -357,5 +376,52 @@ class ElysiumApi {
       'x-ollama-target': url,
       'x-ollama-path': '/api/tags',
     });
+  }
+
+  // ── Sync ───────────────────────────────────────────────────────────────────
+
+  /// Push local data to server for cross-device sync
+  /// Returns a sync code that can be shared with other devices
+  Future<({String code, int expiresIn})> pushSync({
+    required List<Map<String, dynamic>> playlists,
+    required List<Map<String, dynamic>> favorites,
+    required List<Map<String, dynamic>> history,
+    Map<String, dynamic>? settings,
+  }) async {
+    final data = await _post('$baseUrl/api/sync/push', {
+      'playlists': playlists,
+      'favorites': favorites,
+      'history': history,
+      if (settings != null) 'settings': settings,
+      'client': 'flutter-mobile',
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+    return (
+      code: data['code'] as String,
+      expiresIn: data['expiresIn'] as int,
+    );
+  }
+
+  /// Pull remote data by sync code
+  Future<Map<String, dynamic>?> pullSync(String code) async {
+    try {
+      final data = await _get('$baseUrl/api/sync/pull/$code');
+      return data as Map<String, dynamic>;
+    } on http.Response catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Legacy save endpoint for backward compatibility
+  Future<String> legacySave(List<Map<String, dynamic>> playlists) async {
+    final data = await _post('$baseUrl/api/save', {'data': playlists});
+    return data['code'] as String;
+  }
+
+  /// Legacy pull endpoint for backward compatibility
+  Future<List<dynamic>> legacyPull(String code) async {
+    final data = await _get('$baseUrl/api/sync/$code');
+    return (data['data'] as List<dynamic>? ?? []);
   }
 }

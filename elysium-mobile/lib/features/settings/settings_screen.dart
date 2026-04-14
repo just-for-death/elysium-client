@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -34,6 +35,10 @@ class SettingsScreen extends HookConsumerWidget {
     // Login controllers
     final invUserCtrl = useTextEditingController();
     final invPassCtrl = useTextEditingController();
+
+    // Gotify controllers
+    final gotifyUrlCtrl = useTextEditingController(text: settings?.gotifyUrl ?? '');
+    final gotifyTokenCtrl = useTextEditingController(text: settings?.gotifyToken ?? '');
 
     // Playlist sync state
     final invPlaylists = useState<List<dynamic>?>(null);
@@ -272,6 +277,9 @@ class SettingsScreen extends HookConsumerWidget {
           'invidiousInstance': sanitizedInstance,
           'lastFmApiKey': lastFmKeyCtrl.text.trim(),
           'apiSecret': apiSecretCtrl.text.trim(),
+          // New settings
+          'gotifyUrl': gotifyUrlCtrl.text.trim(),
+          'gotifyToken': gotifyTokenCtrl.text.trim(),
         });
         
         // Auto-validate LB if token changed
@@ -1031,10 +1039,293 @@ class SettingsScreen extends HookConsumerWidget {
                           ref.read(playerProvider.notifier).fetchSettings();
                         },
                       ),
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05))),
+                      _SwitchTile(
+                        label: 'SponsorBlock',
+                        subtitle: 'Skip sponsored segments automatically',
+                        value: settings.sponsorBlock,
+                        cs: cs,
+                        isDark: isDark,
+                        onChanged: (v) {
+                          ref.read(settingsProvider.notifier).update({'sponsorBlock': v});
+                        },
+                      ),
                     ],
                   ),
                 ),
               ),
+
+              // ── SCROBBLING ADVANCED ─────────────────────────────────────
+              if (settings.listenBrainzUsername != null && settings.listenBrainzUsername!.isNotEmpty) ...[
+                _SectionHeader(label: 'Scrobbling Advanced', icon: Icons.radio_button_checked_rounded, isDark: isDark, cs: cs),
+                SliverToBoxAdapter(
+                  child: _SettingsCard(
+                    isDark: isDark,
+                    cs: cs,
+                    accent: const Color(0xFFEB743B),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SwitchTile(
+                          label: 'Enable Scrobbling',
+                          subtitle: 'Submit plays to ListenBrainz',
+                          value: settings.listenBrainzEnabled,
+                          cs: cs,
+                          isDark: isDark,
+                          onChanged: (v) {
+                            ref.read(settingsProvider.notifier).update({'listenBrainzEnabled': v});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _SwitchTile(
+                          label: 'Playing Now',
+                          subtitle: 'Broadcast currently playing status',
+                          value: settings.listenBrainzPlayingNow,
+                          cs: cs,
+                          isDark: isDark,
+                          onChanged: (v) {
+                            ref.read(settingsProvider.notifier).update({'listenBrainzPlayingNow': v});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _SettingsLabel('SCROBBLE PERCENTAGE', cs),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Slider(
+                                value: settings.listenBrainzScrobblePercent.toDouble(),
+                                min: 10,
+                                max: 100,
+                                divisions: 9,
+                                label: '${settings.listenBrainzScrobblePercent}%',
+                                onChanged: (v) {
+                                  ref.read(settingsProvider.notifier).update({'listenBrainzScrobblePercent': v.round()});
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 50,
+                              child: Text('${settings.listenBrainzScrobblePercent}%',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: cs.primary)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _SettingsLabel('MAX SCROBBLE SECONDS', cs),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Slider(
+                                value: settings.listenBrainzScrobbleMaxSeconds.toDouble(),
+                                min: 0,
+                                max: 600,
+                                divisions: 12,
+                                label: settings.listenBrainzScrobbleMaxSeconds == 0 ? 'No limit' : '${settings.listenBrainzScrobbleMaxSeconds}s',
+                                onChanged: (v) {
+                                  ref.read(settingsProvider.notifier).update({'listenBrainzScrobbleMaxSeconds': v.round()});
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 60,
+                              child: Text(settings.listenBrainzScrobbleMaxSeconds == 0 ? 'No limit' : '${settings.listenBrainzScrobbleMaxSeconds}s',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: cs.primary)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
+              // ── NOTIFICATIONS (GOTIFY) ─────────────────────────────────────
+              _SectionHeader(label: 'Notifications', icon: Icons.notifications_rounded, isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  accent: const Color(0xFF0077B6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SwitchTile(
+                        label: 'Enable Gotify',
+                        subtitle: 'Send notifications via Gotify server',
+                        value: settings.gotifyEnabled,
+                        cs: cs,
+                        isDark: isDark,
+                        onChanged: (v) {
+                          ref.read(settingsProvider.notifier).update({'gotifyEnabled': v});
+                        },
+                      ),
+                      if (settings.gotifyEnabled) ...[
+                        const SizedBox(height: 16),
+                        _SettingsLabel('GOTIFY URL', cs),
+                        const SizedBox(height: 8),
+                        _StyledTextField(
+                          controller: gotifyUrlCtrl,
+                          hint: 'https://your-gotify-server.com',
+                          isDark: isDark,
+                          cs: cs,
+                        ),
+                        const SizedBox(height: 14),
+                        _SettingsLabel('GOTIFY TOKEN', cs),
+                        const SizedBox(height: 8),
+                        _StyledTextField(
+                          controller: gotifyTokenCtrl,
+                          hint: 'Your Gotify app token',
+                          isDark: isDark,
+                          cs: cs,
+                          obscure: true,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── DEVICE SYNC ───────────────────────────────────────────────
+              _SectionHeader(label: 'Device Sync', icon: Icons.sync_rounded, isDark: isDark, cs: cs),
+              SliverToBoxAdapter(
+                child: _SettingsCard(
+                  isDark: isDark,
+                  cs: cs,
+                  accent: Colors.teal,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SwitchTile(
+                        label: 'Auto Sync',
+                        subtitle: 'Automatically sync data across devices',
+                        value: settings.syncEnabled,
+                        cs: cs,
+                        isDark: isDark,
+                        onChanged: (v) {
+                          ref.read(settingsProvider.notifier).update({'syncEnabled': v});
+                        },
+                      ),
+                      if (settings.syncEnabled) ...[
+                        const SizedBox(height: 16),
+                        _SettingsLabel('SYNC INTERVAL (MINUTES)', cs),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Slider(
+                                value: settings.syncInterval.toDouble(),
+                                min: 5,
+                                max: 120,
+                                divisions: 23,
+                                label: '${settings.syncInterval} min',
+                                onChanged: (v) {
+                                  ref.read(settingsProvider.notifier).update({'syncInterval': v.round()});
+                                },
+                              ),
+                            ),
+                            SizedBox(
+                              width: 60,
+                              child: Text('${settings.syncInterval} min',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: cs.primary)),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      const Divider(color: Colors.white10),
+                      const SizedBox(height: 16),
+                      _SettingsLabel('CROSS-DEVICE SYNC', cs),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Push your data to the server and share the code with other devices to sync playlists, favorites, and history.',
+                        style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+                      ),
+                      const SizedBox(height: 16),
+                      _SyncButtons(isDark: isDark, cs: cs),
+                      if (settings.linkedDevices.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        const Divider(color: Colors.white10),
+                        const SizedBox(height: 16),
+                        _SettingsLabel('LINKED DEVICES', cs),
+                        const SizedBox(height: 8),
+                        ...settings.linkedDevices.map((device) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.white.withValues(alpha: 0.02) : Colors.black.withValues(alpha: 0.02),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.phone_android_rounded, color: cs.primary),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(device.name, style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? Colors.white : cs.onSurface)),
+                                      Text(device.platform, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                                    ],
+                                  ),
+                                ),
+                                Text(device.code, style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant, fontFamily: 'monospace')),
+                              ],
+                            ),
+                          ),
+                        )),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── INVIDIOUS PLAYLIST SETTINGS ──────────────────────────────
+              if (settings.invidiousUsername != null) ...[
+                _SectionHeader(label: 'Playlist Sync', icon: Icons.playlist_sync_rounded, isDark: isDark, cs: cs),
+                SliverToBoxAdapter(
+                  child: _SettingsCard(
+                    isDark: isDark,
+                    cs: cs,
+                    accent: Colors.red,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SwitchTile(
+                          label: 'Auto-Push Playlists',
+                          subtitle: 'Automatically create playlists on YouTube',
+                          value: settings.invidiousAutoPush,
+                          cs: cs,
+                          isDark: isDark,
+                          onChanged: (v) {
+                            ref.read(settingsProvider.notifier).update({'invidiousAutoPush': v});
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _SettingsLabel('DEFAULT PRIVACY', cs),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _PrivacyButton(label: 'Private', value: 'private', current: settings.invidiousPlaylistPrivacy, cs: cs, isDark: isDark, onTap: () {
+                              ref.read(settingsProvider.notifier).update({'invidiousPlaylistPrivacy': 'private'});
+                            }),
+                            const SizedBox(width: 8),
+                            _PrivacyButton(label: 'Unlisted', value: 'unlisted', current: settings.invidiousPlaylistPrivacy, cs: cs, isDark: isDark, onTap: () {
+                              ref.read(settingsProvider.notifier).update({'invidiousPlaylistPrivacy': 'unlisted'});
+                            }),
+                            const SizedBox(width: 8),
+                            _PrivacyButton(label: 'Public', value: 'public', current: settings.invidiousPlaylistPrivacy, cs: cs, isDark: isDark, onTap: () {
+                              ref.read(settingsProvider.notifier).update({'invidiousPlaylistPrivacy': 'public'});
+                            }),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               // ── SYSTEM ───────────────────────────────────────────────────
               _SectionHeader(label: 'Connection', icon: Icons.dns_rounded, isDark: isDark, cs: cs),
@@ -1687,6 +1978,325 @@ class _TestSaveButton extends StatelessWidget {
                   color: activeColor,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivacyButton extends StatelessWidget {
+  const _PrivacyButton({
+    required this.label,
+    required this.value,
+    required this.current,
+    required this.cs,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final String current;
+  final ColorScheme cs;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = current == value;
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: isActive ? Colors.red.withValues(alpha: 0.15) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isActive ? Colors.red : (isDark ? Colors.white10 : Colors.black12),
+                width: isActive ? 2 : 1,
+              ),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive ? Colors.red : cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SyncButtons extends HookConsumerWidget {
+  const _SyncButtons({required this.isDark, required this.cs});
+
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final syncState = ref.watch(syncProvider);
+    final pushLoading = useState(false);
+    final pullLoading = useState(false);
+    final syncCodeCtrl = useTextEditingController();
+
+    Future<void> handlePush() async {
+      pushLoading.value = true;
+      try {
+        await ref.read(syncProvider.notifier).pushToServer();
+        final state = ref.read(syncProvider);
+        if (state.lastSyncCode != null && context.mounted) {
+          final code = state.lastSyncCode!;
+          await Clipboard.setData(ClipboardData(text: code));
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Sync code copied: $code'),
+                backgroundColor: Colors.green,
+                action: SnackBarAction(
+                  label: 'OK',
+                  textColor: Colors.white,
+                  onPressed: () {},
+                ),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Sync failed: $e'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        pushLoading.value = false;
+      }
+    }
+
+    Future<void> handlePull() async {
+      final code = syncCodeCtrl.text.trim();
+      if (code.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enter a sync code')),
+          );
+        }
+        return;
+      }
+
+      pullLoading.value = true;
+      try {
+        await ref.read(syncProvider.notifier).pullFromServer(code);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sync completed successfully!'), backgroundColor: Colors.green),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Pull failed: $e'), backgroundColor: Colors.red),
+          );
+        }
+      } finally {
+        pullLoading.value = false;
+        syncCodeCtrl.clear();
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Push button
+        _SyncButton(
+          icon: Icons.cloud_upload_rounded,
+          label: 'Push to Server',
+          subtitle: 'Export playlists, favorites, and history',
+          isLoading: pushLoading.value,
+          isDark: isDark,
+          cs: cs,
+          onTap: handlePush,
+        ),
+        const SizedBox(height: 12),
+        // Pull section
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    if (isDark) BoxShadow(color: cs.primary.withValues(alpha: 0.05), blurRadius: 4, spreadRadius: -2),
+                  ],
+                ),
+                child: TextField(
+                  controller: syncCodeCtrl,
+                  style: TextStyle(color: isDark ? Colors.white : cs.onSurface, fontSize: 15, fontFamily: 'monospace'),
+                  decoration: InputDecoration(
+                    hintText: 'Enter sync code',
+                    hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+                    filled: true,
+                    fillColor: isDark ? Colors.white.withValues(alpha: 0.04) : cs.surfaceContainerHighest.withValues(alpha: 0.3),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: isDark ? Colors.white10 : cs.outlineVariant.withValues(alpha: 0.5), width: 1),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: cs.primary.withValues(alpha: 0.5), width: 1.5),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            _SyncButton(
+              icon: Icons.cloud_download_rounded,
+              label: pullLoading.value ? 'Pulling...' : 'Pull',
+              subtitle: 'Import from code',
+              isLoading: pullLoading.value,
+              isDark: isDark,
+              cs: cs,
+              onTap: handlePull,
+              isCompact: true,
+            ),
+          ],
+        ),
+        if (syncState.lastSyncAt != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Last sync: ${_formatDateTime(syncState.lastSyncAt!)}',
+            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.6)),
+            textAlign: TextAlign.center,
+          ),
+        ],
+        if (syncState.errorMessage != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded, size: 16, color: Colors.red),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    syncState.errorMessage!,
+                    style: const TextStyle(fontSize: 12, color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+}
+
+class _SyncButton extends StatelessWidget {
+  const _SyncButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.isLoading,
+    required this.isDark,
+    required this.cs,
+    required this.onTap,
+    this.isCompact = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool isLoading;
+  final bool isDark;
+  final ColorScheme cs;
+  final VoidCallback onTap;
+  final bool isCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isLoading ? null : onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: EdgeInsets.symmetric(vertical: isCompact ? 12 : 16, horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.teal.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              if (isLoading)
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.teal,
+                  ),
+                )
+              else
+                Icon(icon, size: 24, color: Colors.teal),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.teal,
+                      ),
+                    ),
+                    if (!isCompact) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 20, color: Colors.teal.withValues(alpha: 0.5)),
             ],
           ),
         ),

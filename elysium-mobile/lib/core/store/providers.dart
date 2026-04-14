@@ -15,6 +15,13 @@ final sharedPrefsProvider = FutureProvider<SharedPreferences>((ref) async {
   return SharedPreferences.getInstance();
 });
 
+// ── Connection status provider ───────────────────────────────────────────────
+enum ConnectionStatus { disconnected, connecting, connected, error }
+
+final connectionStatusProvider = StateProvider<ConnectionStatus>((ref) {
+  return ConnectionStatus.disconnected;
+});
+
 // ── Server IP provider ────────────────────────────────────────────────────────
 final serverIpProvider =
     StateNotifierProvider<ServerIpNotifier, String>((ref) {
@@ -243,7 +250,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   Future<void> playIndex(int index) async {
     if (index < 0 || index >= state.queue.length) return;
-    
+
     final version = ++_playVersion;
     state = state.copyWith(currentIndex: index);
     final track = state.queue[index];
@@ -256,9 +263,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       state = state.copyWith(videoMode: settings.videoMode);
       final api = _api; // Uses current settings/secret
 
-      final instance = settings.invidiousInstance.isNotEmpty 
-          ? settings.invidiousInstance 
-          : 'https://yt.ikiagi.loseyourip.com';
+      // Use configured instance - require explicit configuration (no hardcoded fallback)
+      final instance = settings.invidiousInstance.isNotEmpty
+          ? settings.invidiousInstance
+          : '';
+
+      // Guard: if no instance is configured and we have a videoId, we cannot resolve stream
+      if (instance.isEmpty && track.videoId != null) {
+        throw Exception('No Invidious instance configured. Please set one in Settings.');
+      }
 
       // ── Stream Resolution Logic ───────────────────────────────────────────
       if (track.videoId != null) {
@@ -268,7 +281,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
         final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
         dynamic bestFormat;
-        
+
         if (state.videoMode) {
           bestFormat = formats.firstWhere(
             (f) => (f['type']?.toString().contains('video/') ?? false) && f['videoOnly'] != true,
@@ -283,18 +296,22 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             orElse: () => formats.isNotEmpty ? formats.first : null,
           );
         }
-        
+
         if (bestFormat != null && bestFormat['url'] != null) {
           playUrl = bestFormat['url'];
         }
       } else if (playUrl != null && (playUrl.contains('apple.com') || playUrl.contains('itunes'))) {
+        if (instance.isEmpty) {
+          // Cannot resolve Apple Music links without Invidious
+          throw Exception('Invidious instance required to play Apple Music tracks');
+        }
         final results = await api.invidiousSearch('${track.artist} ${track.title} official audio',
             instanceUrl: instance);
         if (version != _playVersion) return;
 
         if (results.isNotEmpty) {
           final match = results.first;
-          final details = await api.getVideoDetails(match.id,
+          final details = await api.getVideoDetails(match.videoId ?? match.id,
               instanceUrl: instance, sid: settings.invidiousSid);
           if (version != _playVersion) return;
 
@@ -303,7 +320,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             (f) => f['type']?.toString().startsWith('audio/') ?? false,
             orElse: () => formats.isNotEmpty ? formats.first : null,
           );
-          
+
           if (bestFormat != null && bestFormat['url'] != null) {
             playUrl = bestFormat['url'];
           }
@@ -312,11 +329,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       if (playUrl != null && playUrl.isNotEmpty && version == _playVersion) {
         await _player.open(Media(playUrl));
+      } else if (playUrl == null || playUrl.isEmpty) {
+        throw Exception('No playable URL found for this track');
       }
     } catch (e) {
       if (version != _playVersion) return;
       print('Playback error: $e');
-      if (track.url != null) {
+      // Try to play the original URL as fallback (e.g., direct Apple Music preview)
+      if (track.url != null && track.url!.isNotEmpty) {
         await _player.open(Media(track.url!));
       }
     }
@@ -392,5 +412,124 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   void dispose() {
     _player.dispose();
     super.dispose();
+  }
+}
+
+// ── Sync State ────────────────────────────────────────────────────────────────
+enum SyncStatus { idle, syncing, success, error }
+
+class SyncState {
+  final SyncStatus status;
+  final String? lastSyncCode;
+  final DateTime? lastSyncAt;
+  final String? errorMessage;
+  final int expiresIn;
+
+  const SyncState({
+    this.status = SyncStatus.idle,
+    this.lastSyncCode,
+    this.lastSyncAt,
+    this.errorMessage,
+    this.expiresIn = 0,
+  });
+
+  SyncState copyWith({
+    SyncStatus? status,
+    String? lastSyncCode,
+    DateTime? lastSyncAt,
+    String? errorMessage,
+    int? expiresIn,
+  }) =>
+      SyncState(
+        status: status ?? this.status,
+        lastSyncCode: lastSyncCode ?? this.lastSyncCode,
+        lastSyncAt: lastSyncAt ?? this.lastSyncAt,
+        errorMessage: errorMessage,
+        expiresIn: expiresIn ?? this.expiresIn,
+      );
+}
+
+final syncProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
+  return SyncNotifier(ref);
+});
+
+class SyncNotifier extends StateNotifier<SyncState> {
+  final Ref _ref;
+
+  SyncNotifier(this._ref) : super(const SyncState());
+
+  ElysiumApi get _api {
+    final serverIp = _ref.read(serverIpProvider);
+    final settings = _ref.read(settingsProvider);
+    return ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? '');
+  }
+
+  Future<void> pushToServer() async {
+    state = state.copyWith(status: SyncStatus.syncing, errorMessage: null);
+    try {
+      // Gather all local data
+      final history = await _api.getHistory();
+      final favorites = await _api.getFavorites();
+      final playlists = await _api.getPlaylists();
+
+      // Push to server
+      final result = await _api.pushSync(
+        playlists: playlists.map((p) => p.toJson()).toList(),
+        favorites: favorites.map((f) => f.toJson()).toList(),
+        history: history.map((h) => h.toJson()).toList(),
+      );
+
+      state = state.copyWith(
+        status: SyncStatus.success,
+        lastSyncCode: result.code,
+        lastSyncAt: DateTime.now(),
+        expiresIn: result.expiresIn,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: SyncStatus.error,
+        errorMessage: e.toString().replaceAll('Exception: ', ''),
+      );
+    }
+  }
+
+  Future<void> pullFromServer(String code) async {
+    state = state.copyWith(status: SyncStatus.syncing, errorMessage: null);
+    try {
+      final data = await _api.pullSync(code);
+      if (data == null) {
+        state = state.copyWith(
+          status: SyncStatus.error,
+          errorMessage: 'Sync code not found or expired',
+        );
+        return;
+      }
+
+      // Import playlists
+      final playlists = data['playlists'] as List<dynamic>? ?? [];
+      for (final p in playlists) {
+        try {
+          await _api.createPlaylist(p['title'] ?? 'Imported Playlist');
+        } catch (_) {}
+      }
+
+      state = state.copyWith(
+        status: SyncStatus.success,
+        lastSyncCode: code,
+        lastSyncAt: DateTime.now(),
+      );
+
+      // Refresh data from server
+      _ref.read(settingsProvider.notifier).refresh();
+    } catch (e) {
+      state = state.copyWith(
+        status: SyncStatus.error,
+        errorMessage: e.toString().replaceAll('Exception: ', ''),
+      );
+    }
+  }
+
+  void reset() {
+    state = const SyncState();
   }
 }
