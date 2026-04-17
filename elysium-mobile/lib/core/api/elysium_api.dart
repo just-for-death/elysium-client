@@ -218,9 +218,30 @@ class ElysiumApi {
   }
 
   // ── Lyrics Proxy ──────────────────────────────────────────────────────────
+
+  /// LRCLIB exact lookup. Returns { syncedLyrics, plainLyrics, ... } or throws 404.
+  Future<dynamic> lrclibGet(String artist, String title,
+      {String? album, int? duration}) async {
+    final params = {
+      'artist': artist,
+      'title': title,
+      if (album != null) 'album': album,
+      if (duration != null) 'duration': '$duration',
+    };
+    final qs =
+        params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    return _get('$_lib/lrclib/get?$qs');
+  }
+
+  /// LRCLIB search — returns a List of track objects with syncedLyrics / plainLyrics.
+  Future<dynamic> lrclibSearch(String query) async {
+    return _get('$_lib/lrclib/search?q=${Uri.encodeComponent(query)}');
+  }
+
+  /// NetEase search — kept as last-resort fallback for Asian music.
   Future<dynamic> lyricsSearch(String query) async {
     return _get(
-      '$_lib/netease/search?s=${Uri.encodeComponent(query)}&limit=5',
+      '$_lib/netease/search?s=${Uri.encodeComponent(query)}&limit=10',
     );
   }
 

@@ -6,6 +6,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
+import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
 import 'video_player_view.dart';
 
@@ -28,6 +29,7 @@ class PlayerScreen extends HookConsumerWidget {
     final track = player.currentTrack;
     final tab = useState(_PlayerTab.cover);
     final lyrics = useState<List<({double time, String text})>>([]);
+    final lyricsPlain = useState<List<String>>([]);
     final lyricsLoading = useState(false);
     final lyricError = useState('');
     final activeLyricIdx = useState(0);
@@ -44,6 +46,7 @@ class PlayerScreen extends HookConsumerWidget {
         ..forward();
       // Reset rotation on track change is handled by the widget state
       lyrics.value = [];
+      lyricsPlain.value = [];
       lyricError.value = '';
       activeLyricIdx.value = 0;
       return null;
@@ -64,27 +67,10 @@ class PlayerScreen extends HookConsumerWidget {
     // Lyrics fetch on tab switch
     useEffect(() {
       if (tab.value != _PlayerTab.lyrics || track == null) return null;
-      if (lyrics.value.isNotEmpty) return null;
+      if (lyrics.value.isNotEmpty || lyricsPlain.value.isNotEmpty) return null;
       lyricsLoading.value = true;
       lyricError.value = '';
-      api
-          .lyricsSearch('${track.title} ${track.artist}')
-          .then((data) async {
-        final songs = data?['result']?['songs'] as List<dynamic>?;
-        if (songs == null || songs.isEmpty) {
-          throw Exception('No lyrics found');
-        }
-        final id = songs[0]['id'].toString();
-        final lyricData = await api.lyricsGet(id);
-        final lrc = lyricData?['lrc']?['lyric'] as String? ?? '';
-        final parsed = _parseLRC(lrc);
-        if (parsed.isEmpty) throw Exception('Empty lyrics');
-        lyrics.value = parsed;
-      }).catchError((e) {
-        lyricError.value = e.toString().replaceAll('Exception: ', '');
-      }).whenComplete(() {
-        lyricsLoading.value = false;
-      });
+      _doFetchLyrics(api, track, lyrics, lyricsPlain, lyricError, lyricsLoading);
       return null;
     }, [tab.value, track?.effectiveId]);
 
@@ -235,6 +221,7 @@ class PlayerScreen extends HookConsumerWidget {
                     player,
                     artworkUrl,
                     lyrics,
+                    lyricsPlain,
                     lyricsLoading,
                     lyricError,
                     activeLyricIdx,
@@ -485,6 +472,7 @@ class PlayerScreen extends HookConsumerWidget {
     PlayerState player,
     String artworkUrl,
     ValueNotifier<List<({double time, String text})>> lyrics,
+    ValueNotifier<List<String>> lyricsPlain,
     ValueNotifier<bool> lyricsLoading,
     ValueNotifier<String> lyricError,
     ValueNotifier<int> activeLyricIdx,
@@ -595,36 +583,80 @@ class PlayerScreen extends HookConsumerWidget {
             ),
           );
         }
-        if (lyrics.value.isEmpty) {
-          return const Center(
-            child: Text('Tap Lyrics tab to fetch',
-                style: TextStyle(color: Colors.white38)),
+        // ── Synced lyrics ─────────────────────────────────────────────────
+        if (lyrics.value.isNotEmpty) {
+          return ListView.builder(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+            itemCount: lyrics.value.length,
+            itemBuilder: (context, i) {
+              final isActive = i == activeLyricIdx.value;
+              final delta = (i - activeLyricIdx.value).abs();
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  lyrics.value[i].text,
+                  style: TextStyle(
+                    color: Colors.white.withValues(
+                        alpha: isActive ? 1.0 : (0.6 - delta * 0.1).clamp(0.1, 0.6)),
+                    fontSize: isActive ? 22 : 18,
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                    height: 1.4,
+                  ),
+                ),
+              );
+            },
           );
         }
-        return ListView.builder(
-          controller: scrollCtrl,
-          padding: const EdgeInsets.symmetric(
-              horizontal: 24, vertical: 40),
-          itemCount: lyrics.value.length,
-          itemBuilder: (context, i) {
-            final isActive = i == activeLyricIdx.value;
-            final delta = (i - activeLyricIdx.value).abs();
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                lyrics.value[i].text,
-                style: TextStyle(
-                  color: Colors.white
-                      .withValues(alpha: isActive ? 1 : (0.6 - delta * 0.1).clamp(0.1, 0.6)),
-                  fontSize: isActive ? 22 : 18,
-                  fontWeight: isActive
-                      ? FontWeight.w700
-                      : FontWeight.w500,
-                  height: 1.4,
+
+        // ── Plain (non-synced) lyrics ──────────────────────────────────────
+        if (lyricsPlain.value.isNotEmpty) {
+          return SingleChildScrollView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // "plain lyrics" badge
+                Container(
+                  margin: const EdgeInsets.only(bottom: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Plain lyrics · no sync',
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ),
-              ),
-            );
-          },
+                ...lyricsPlain.value.map(
+                  (line) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Text(
+                      line,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return const Center(
+          child: Text('No lyrics found',
+              style: TextStyle(color: Colors.white38)),
         );
 
       case _PlayerTab.queue:
@@ -721,6 +753,118 @@ class PlayerScreen extends HookConsumerWidget {
     final m = d.inMinutes;
     final s = d.inSeconds % 60;
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  // ── Lyrics fetch orchestration ────────────────────────────────────────────
+
+  Future<void> _doFetchLyrics(
+    ElysiumApi api,
+    Track track,
+    ValueNotifier<List<({double time, String text})>> lyrics,
+    ValueNotifier<List<String>> lyricsPlain,
+    ValueNotifier<String> lyricError,
+    ValueNotifier<bool> lyricsLoading,
+  ) async {
+    try {
+      final artist = track.artist;
+      final title  = track.title;
+      final query  = '$title $artist'.trim();
+
+      // 1. LRCLIB exact lookup (best for Western music)
+      try {
+        final data = await api.lrclibGet(artist, title);
+        if (_applyLrclibResult(data, lyrics, lyricsPlain)) return;
+      } on Exception catch (_) {
+        // 404 or network error — continue to next source
+      }
+
+      // 2. LRCLIB search fallback
+      try {
+        final raw = await api.lrclibSearch(query);
+        final results = raw is List<dynamic> ? raw : null;
+        if (results != null && results.isNotEmpty) {
+          final best = _bestLrclibMatch(results, title, artist);
+          if (best != null && _applyLrclibResult(best, lyrics, lyricsPlain)) return;
+        }
+      } on Exception catch (_) {
+        // Continue to NetEase fallback
+      }
+
+      // 3. NetEase fallback — good for Asian music; pick best artist match
+      final searchData = await api.lyricsSearch(query);
+      final songs = searchData?['result']?['songs'] as List<dynamic>?;
+      if (songs == null || songs.isEmpty) throw Exception('No lyrics found');
+
+      final best = _bestNetEaseMatch(songs, artist);
+      final lyricData = await api.lyricsGet(best['id'].toString());
+
+      // Prefer tlyric (translated) only if it seems to provide the original language.
+      // Always prefer lrc (original lyrics) first.
+      final lrc = lyricData?['lrc']?['lyric'] as String? ?? '';
+      final parsed = _parseLRC(lrc);
+      if (parsed.isEmpty) throw Exception('No lyrics found');
+      lyrics.value = parsed;
+    } catch (e) {
+      lyricError.value = 'No lyrics found';
+    } finally {
+      lyricsLoading.value = false;
+    }
+  }
+
+  /// Applies a LRCLIB result to the state. Returns true if any lyrics were set.
+  bool _applyLrclibResult(
+    dynamic data,
+    ValueNotifier<List<({double time, String text})>> lyrics,
+    ValueNotifier<List<String>> lyricsPlain,
+  ) {
+    final synced = data?['syncedLyrics'] as String?;
+    if (synced != null && synced.trim().isNotEmpty) {
+      final parsed = _parseLRC(synced);
+      if (parsed.isNotEmpty) {
+        lyrics.value = parsed;
+        return true;
+      }
+    }
+    final plain = data?['plainLyrics'] as String?;
+    if (plain != null && plain.trim().isNotEmpty) {
+      lyricsPlain.value =
+          plain.split('\n').where((l) => l.trim().isNotEmpty).toList();
+      return true;
+    }
+    return false;
+  }
+
+  /// Pick the best LRCLIB result by matching artist + title.
+  dynamic _bestLrclibMatch(List<dynamic> results, String title, String artist) {
+    final tl = title.toLowerCase();
+    final al = artist.toLowerCase();
+    // Prefer full artist+title match
+    for (final r in results) {
+      final ra = (r['artistName'] as String? ?? '').toLowerCase();
+      final rt = (r['trackName']  as String? ?? '').toLowerCase();
+      if ((ra.contains(al) || al.contains(ra)) &&
+          (rt.contains(tl) || tl.contains(rt))) { return r; }
+    }
+    // Title-only match
+    for (final r in results) {
+      final rt = (r['trackName'] as String? ?? '').toLowerCase();
+      if (rt.contains(tl) || tl.contains(rt)) return r;
+    }
+    return results.first;
+  }
+
+  /// Pick the best NetEase result by matching artist name (avoids Chinese covers).
+  Map<String, dynamic> _bestNetEaseMatch(List<dynamic> songs, String artist) {
+    final al = artist.toLowerCase();
+    for (final song in songs) {
+      final artists = (song['artists'] as List<dynamic>? ?? [])
+          .map((a) => (a['name'] as String? ?? '').toLowerCase())
+          .toList();
+      if (artists.any((a) => a.contains(al) || al.contains(a))) {
+        return song as Map<String, dynamic>;
+      }
+    }
+    return songs.first as Map<String, dynamic>;
   }
 
   List<({double time, String text})> _parseLRC(String lrc) {
