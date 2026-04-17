@@ -4,7 +4,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
-import '../../core/models/models.dart';
 import '../../core/models/track.dart';
 import '../../core/store/providers.dart';
 import '../../core/utils.dart';
@@ -126,7 +125,7 @@ class SearchScreen extends HookConsumerWidget {
         ),
       ).listen((_) {});
       return timer.cancel;
-    }, [query.value]);
+    }, [query.value, searchMode.value]);
 
     Future<void> searchGenre(String genre) async {
       selectedGenre.value = genre;

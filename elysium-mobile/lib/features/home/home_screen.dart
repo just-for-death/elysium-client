@@ -25,7 +25,11 @@ class HomeScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final serverIp = ref.watch(serverIpProvider);
-    final api = useMemoized(() => ElysiumApi(serverIp), [serverIp]);
+    final settings = ref.watch(settingsProvider);
+    final api = useMemoized(
+      () => ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? ''),
+      [serverIp, settings?.apiSecret],
+    );
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 

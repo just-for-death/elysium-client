@@ -21,12 +21,12 @@ class ElysiumApi {
   final String apiSecret;
 
   String get _lib => '$baseUrl/api/v1/library';
-  String get _invidious => '$_lib/invidious';
+  String get _invidious => '$baseUrl/api/invidious';
 
   /// Test server connection and return status
   Future<({bool ok, String message})> testConnection() async {
     try {
-      final data = await _get('$baseUrl/api/countryCode');
+      await _get('$baseUrl/api/countryCode');
       return (ok: true, message: 'Connected');
     } catch (e) {
       return (ok: false, message: e.toString().replaceAll('Exception: ', ''));
@@ -184,6 +184,12 @@ class ElysiumApi {
     await _delete('$_lib/playlists/$id');
   }
 
+  /// Create a playlist with its full track list in one request.
+  Future<Playlist> importPlaylist(Map<String, dynamic> data) async {
+    final res = await _post('$_lib/playlists', data);
+    return Playlist.fromJson(res as Map<String, dynamic>);
+  }
+
   // ── Artists ───────────────────────────────────────────────────────────────
   Future<List<Artist>> getArtists() async {
     final data = await _get('$_lib/artists');
@@ -223,10 +229,13 @@ class ElysiumApi {
   }
 
   // ── Invidious Proxy ───────────────────────────────────────────────────────
+  // Search calls the Invidious instance directly — the Elysium server has no
+  // /api/invidious/search proxy endpoint.
   Future<List<Track>> invidiousSearch(String query, {required String instanceUrl, String type = 'video'}) async {
     if (instanceUrl.isEmpty) return [];
+    final base = instanceUrl.replaceAll(RegExp(r'/+$'), '');
     final data = await _get(
-      '$_lib/invidious/search?instanceUrl=${Uri.encodeComponent(instanceUrl)}&q=${Uri.encodeComponent(query)}&type=$type',
+      '$base/api/v1/search?q=${Uri.encodeComponent(query)}&type=$type',
     );
     if (data is! List) return [];
     return data.map((v) => Track(
@@ -243,7 +252,7 @@ class ElysiumApi {
 
   Future<Map<String, dynamic>> getVideoDetails(String videoId, {required String instanceUrl, String? sid}) async {
     return await _get(
-      '$_lib/invidious/video/$videoId',
+      '$_invidious/video/$videoId',
       headers: {
         'x-invidious-instance': instanceUrl,
         if (sid != null) 'x-invidious-sid': sid,
@@ -253,14 +262,14 @@ class ElysiumApi {
 
   Future<Map<String, dynamic>> invidiousLogin(String instanceUrl, String username, String password) async {
     return await _post(
-      '$_lib/invidious/login',
+      '$_invidious/login',
       {'instanceUrl': instanceUrl, 'username': username, 'password': password},
     ) as Map<String, dynamic>;
   }
 
   Future<List<dynamic>> getInvidiousPlaylists({required String instanceUrl, String? sid}) async {
     final data = await _get(
-      '$_lib/invidious/playlists',
+      '$_invidious/playlists',
       headers: {
         'x-invidious-instance': instanceUrl,
         if (sid != null) 'x-invidious-sid': sid,
@@ -397,18 +406,18 @@ class ElysiumApi {
       'timestamp': DateTime.now().toIso8601String(),
     });
     return (
-      code: data['code'] as String,
-      expiresIn: data['expiresIn'] as int,
+      code: data['code']?.toString() ?? '',
+      expiresIn: data['expiresIn'] is int ? data['expiresIn'] as int : int.tryParse(data['expiresIn']?.toString() ?? '') ?? 0,
     );
   }
 
-  /// Pull remote data by sync code
+  /// Pull remote data by sync code. Returns null when code is not found (404).
   Future<Map<String, dynamic>?> pullSync(String code) async {
     try {
       final data = await _get('$baseUrl/api/sync/pull/$code');
       return data as Map<String, dynamic>;
-    } on http.Response catch (e) {
-      if (e.statusCode == 404) return null;
+    } catch (e) {
+      if (e.toString().contains('404')) return null;
       rethrow;
     }
   }

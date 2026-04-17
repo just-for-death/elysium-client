@@ -7,7 +7,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../core/api/elysium_api.dart';
 import '../../core/store/providers.dart';
-import '../../core/widgets/glass_widgets.dart';
 import 'video_player_view.dart';
 
 enum _PlayerTab { cover, lyrics, queue }
@@ -20,7 +19,11 @@ class PlayerScreen extends HookConsumerWidget {
     final player = ref.watch(playerProvider);
     final cs = Theme.of(context).colorScheme;
     final serverIp = ref.watch(serverIpProvider);
-    final api = useMemoized(() => ElysiumApi(serverIp), [serverIp]);
+    final settings = ref.watch(settingsProvider);
+    final api = useMemoized(
+      () => ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? ''),
+      [serverIp, settings?.apiSecret],
+    );
 
     final track = player.currentTrack;
     final tab = useState(_PlayerTab.cover);
@@ -30,6 +33,7 @@ class PlayerScreen extends HookConsumerWidget {
     final activeLyricIdx = useState(0);
     final aiLoading = useState(false);
     final lyricsScrollCtrl = useScrollController();
+    final seekBarKey = useMemoized(() => GlobalKey(), []);
     final artworkAnim = useAnimationController(
         duration: const Duration(milliseconds: 300));
 
@@ -190,12 +194,9 @@ class PlayerScreen extends HookConsumerWidget {
                                   final aiTrack =
                                       await api.generateAIQueue(track);
                                   if (aiTrack != null) {
-                                    final q = [...player.queue];
-                                    q.insert(
-                                        player.currentIndex + 1, aiTrack);
                                     ref
                                         .read(playerProvider.notifier)
-                                        .setQueue(q);
+                                        .playNext(aiTrack);
                                   }
                                 } finally {
                                   aiLoading.value = false;
@@ -218,7 +219,6 @@ class PlayerScreen extends HookConsumerWidget {
                                 label: _tabLabel(t),
                                 selected: tab.value == t,
                                 onTap: () => tab.value = t,
-                                cs: cs,
                               ),
                             ))
                         .toList(),
@@ -322,9 +322,8 @@ class PlayerScreen extends HookConsumerWidget {
                     children: [
                       GestureDetector(
                         onHorizontalDragUpdate: (details) {
-                          // Seek while dragging for immediate feedback
-                          final box = context.findRenderObject() as RenderBox;
-                          final width = box.size.width;
+                          final box = seekBarKey.currentContext?.findRenderObject() as RenderBox?;
+                          final width = box?.size.width ?? 1.0;
                           final dx = details.localPosition.dx.clamp(0.0, width);
                           final fraction = dx / width;
                           final target = Duration(
@@ -333,6 +332,7 @@ class PlayerScreen extends HookConsumerWidget {
                           ref.read(playerProvider.notifier).seekTo(target);
                         },
                         child: Container(
+                          key: seekBarKey,
                           height: 30,
                           alignment: Alignment.center,
                           child: SliderTheme(

@@ -73,7 +73,7 @@ class SettingsScreen extends HookConsumerWidget {
     useEffect(() {
       if (settings != null) {
         lbTokenCtrl.text = settings.listenBrainzToken;
-        lbUserCtrl.text = settings.listenBrainzUsername ?? '';
+        lbUserCtrl.text = settings.listenBrainzUsername;
         ollamaUrlCtrl.text = settings.ollamaUrl;
         ollamaModelCtrl.text = settings.ollamaModel;
         invidiousInstanceCtrl.text = settings.invidiousInstance;
@@ -594,7 +594,7 @@ class SettingsScreen extends HookConsumerWidget {
                 Navigator.pop(ctx);
                 saving.value = true;
                 try {
-                  final res = await api.invidiousLogin(instance, user, pass);
+                  final res = await api.invidiousLogin(sanitizedInstance, user, pass);
                   if (res['sid'] != null) {
                     await ref.read(settingsProvider.notifier).update({
                       'invidiousSid': res['sid'],
@@ -661,7 +661,7 @@ class SettingsScreen extends HookConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _SettingsLabel('ELSYIUM SERVER IP', cs),
+                      _SettingsLabel('ELYSIUM SERVER IP', cs),
                       const SizedBox(height: 8),
                       _StyledTextField(
                         controller: serverCtrl, 
@@ -723,7 +723,7 @@ class SettingsScreen extends HookConsumerWidget {
                         _SettingsLabel('QUEUE MODE', cs),
                         const SizedBox(height: 8),
                         _QueueModeSelector(
-                          currentMode: settings?.queueMode ?? 'off',
+                          currentMode: settings.queueMode,
                           isDark: isDark,
                           cs: cs,
                           onChanged: (mode) {
@@ -737,7 +737,7 @@ class SettingsScreen extends HookConsumerWidget {
               ),
 
               // ── OLLAMA ENGINE ───────────────────────────────────────────
-              if ((settings?.queueMode ?? 'off') == 'my_taste') ...[
+              if (settings.queueMode == 'my_taste') ...[
                 _SectionHeader(label: 'AI Engine', icon: Icons.memory_rounded, isDark: isDark, cs: cs),
                 SliverToBoxAdapter(
                   child: _SettingsCard(
@@ -859,7 +859,7 @@ class SettingsScreen extends HookConsumerWidget {
                             onSync: () async {
                               final sc = ScaffoldMessenger.of(context);
                               try {
-                                await api.syncInvidiousPlaylist(pl['playlistId'], instanceUrl: settings.invidiousInstance, sid: settings?.invidiousSid);
+                                await api.syncInvidiousPlaylist(pl['playlistId'], instanceUrl: settings.invidiousInstance, sid: settings.invidiousSid);
                                 sc.showSnackBar(const SnackBar(content: Text('Playlist synced to Library ✓')));
                               } catch (e) {
                                 sc.showSnackBar(SnackBar(content: Text('Sync failed: $e')));
@@ -902,7 +902,7 @@ class SettingsScreen extends HookConsumerWidget {
                         color: const Color(0xFFEB743B),
                       ),
 
-                      if (settings.listenBrainzUsername != null && settings.listenBrainzUsername!.isNotEmpty) ...[
+                      if (settings.listenBrainzUsername.isNotEmpty) ...[
                         const SizedBox(height: 20),
                         _SettingsLabel('LISTENBRAINZ TOOLS', cs),
                         const SizedBox(height: 12),
@@ -1020,7 +1020,7 @@ class SettingsScreen extends HookConsumerWidget {
                       _SwitchTile(
                         label: 'Cache Audio',
                         subtitle: 'Save tracks for offline listening',
-                        value: settings?.cacheEnabled ?? true,
+                        value: settings.cacheEnabled,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
@@ -1031,7 +1031,7 @@ class SettingsScreen extends HookConsumerWidget {
                       _SwitchTile(
                         label: 'Video Mode',
                         subtitle: 'Prefer high-quality video playback',
-                        value: settings?.videoMode ?? false,
+                        value: settings.videoMode,
                         cs: cs,
                         isDark: isDark,
                         onChanged: (v) {
@@ -1056,7 +1056,7 @@ class SettingsScreen extends HookConsumerWidget {
               ),
 
               // ── SCROBBLING ADVANCED ─────────────────────────────────────
-              if (settings.listenBrainzUsername != null && settings.listenBrainzUsername!.isNotEmpty) ...[
+              if (settings.listenBrainzUsername.isNotEmpty) ...[
                 _SectionHeader(label: 'Scrobbling Advanced', icon: Icons.radio_button_checked_rounded, isDark: isDark, cs: cs),
                 SliverToBoxAdapter(
                   child: _SettingsCard(
@@ -1284,7 +1284,7 @@ class SettingsScreen extends HookConsumerWidget {
 
               // ── INVIDIOUS PLAYLIST SETTINGS ──────────────────────────────
               if (settings.invidiousUsername != null) ...[
-                _SectionHeader(label: 'Playlist Sync', icon: Icons.playlist_sync_rounded, isDark: isDark, cs: cs),
+                _SectionHeader(label: 'Playlist Sync', icon: Icons.sync_rounded, isDark: isDark, cs: cs),
                 SliverToBoxAdapter(
                   child: _SettingsCard(
                     isDark: isDark,
@@ -1486,7 +1486,7 @@ class _QueueModeSelector extends StatelessWidget {
           title: 'Discover',
           subtitle: 'Random new music from iTunes & ListenBrainz',
           icon: Icons.explore_rounded,
-          isActive: currentMode == 'discover' || currentMode == 'off',
+          isActive: currentMode == 'discover',
           onTap: () => onChanged('discover'),
           isDark: isDark,
           cs: cs,
@@ -2164,15 +2164,17 @@ class _SyncButtons extends HookConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            _SyncButton(
-              icon: Icons.cloud_download_rounded,
-              label: pullLoading.value ? 'Pulling...' : 'Pull',
-              subtitle: 'Import from code',
-              isLoading: pullLoading.value,
-              isDark: isDark,
-              cs: cs,
-              onTap: handlePull,
-              isCompact: true,
+            IntrinsicWidth(
+              child: _SyncButton(
+                icon: Icons.cloud_download_rounded,
+                label: pullLoading.value ? 'Pulling...' : 'Pull',
+                subtitle: 'Import from code',
+                isLoading: pullLoading.value,
+                isDark: isDark,
+                cs: cs,
+                onTap: handlePull,
+                isCompact: true,
+              ),
             ),
           ],
         ),

@@ -17,7 +17,11 @@ class LibraryScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final serverIp = ref.watch(serverIpProvider);
-    final api = useMemoized(() => ElysiumApi(serverIp), [serverIp]);
+    final settings = ref.watch(settingsProvider);
+    final api = useMemoized(
+      () => ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? ''),
+      [serverIp, settings?.apiSecret],
+    );
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final playerState = ref.watch(playerProvider);
@@ -449,54 +453,6 @@ class LibraryScreen extends HookConsumerWidget {
         child: Icon(Icons.album_rounded,
             color: cs.primary.withValues(alpha: 0.4), size: 40),
       );
-}
-
-class _TabPill extends StatelessWidget {
-  const _TabPill({
-    required this.label,
-    required this.selected,
-    required this.cs,
-    required this.isDark,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final ColorScheme cs;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(right: 8),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? cs.primary
-              : isDark
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : cs.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: selected
-                ? cs.onPrimary
-                : isDark
-                    ? Colors.white.withValues(alpha: 0.7)
-                    : cs.onSurfaceVariant,
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _TrackList extends StatelessWidget {

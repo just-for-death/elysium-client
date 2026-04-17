@@ -182,6 +182,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   void _onTrackComplete() {
+    if (state.queue.isEmpty) return;
     switch (state.repeatMode) {
       case ElysiumRepeatMode.one:
         _player.seek(Duration.zero);
@@ -287,13 +288,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             (f) => (f['type']?.toString().contains('video/') ?? false) && f['videoOnly'] != true,
             orElse: () => formats.firstWhere(
               (f) => f['type']?.toString().contains('video/') ?? false,
-              orElse: () => formats.isNotEmpty ? formats.first : null,
+              orElse: () => formats.isEmpty ? null : formats.first,
             ),
           );
         } else {
           bestFormat = formats.firstWhere(
             (f) => f['type']?.toString().startsWith('audio/') ?? false,
-            orElse: () => formats.isNotEmpty ? formats.first : null,
+            orElse: () => formats.isEmpty ? null : formats.first,
           );
         }
 
@@ -318,7 +319,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
           final bestFormat = formats.firstWhere(
             (f) => f['type']?.toString().startsWith('audio/') ?? false,
-            orElse: () => formats.isNotEmpty ? formats.first : null,
+            orElse: () => formats.isEmpty ? null : formats.first,
           );
 
           if (bestFormat != null && bestFormat['url'] != null) {
@@ -358,12 +359,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> previous() async {
+    if (state.queue.isEmpty) return;
     if (state.position > const Duration(seconds: 3)) {
       await _player.seek(Duration.zero);
       return;
     }
-    final prev = (state.currentIndex - 1 + state.queue.length) %
-        state.queue.length.clamp(1, state.queue.length);
+    final len = state.queue.length;
+    final prev = (state.currentIndex - 1 + len) % len;
     await playIndex(prev);
   }
 
@@ -505,11 +507,27 @@ class SyncNotifier extends StateNotifier<SyncState> {
         return;
       }
 
-      // Import playlists
+      // Import playlists (with full track contents)
       final playlists = data['playlists'] as List<dynamic>? ?? [];
       for (final p in playlists) {
         try {
-          await _api.createPlaylist(p['title'] ?? 'Imported Playlist');
+          await _api.importPlaylist(p as Map<String, dynamic>);
+        } catch (_) {}
+      }
+
+      // Import favorites
+      final favorites = data['favorites'] as List<dynamic>? ?? [];
+      for (final f in favorites) {
+        try {
+          await _api.addFavorite(Track.fromJson(f as Map<String, dynamic>));
+        } catch (_) {}
+      }
+
+      // Import history
+      final history = data['history'] as List<dynamic>? ?? [];
+      for (final h in history) {
+        try {
+          await _api.addHistory(Track.fromJson(h as Map<String, dynamic>));
         } catch (_) {}
       }
 
