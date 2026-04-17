@@ -70,7 +70,7 @@ class SettingsNotifier extends StateNotifier<ElysiumSettings?> {
 
   Future<void> update(Map<String, dynamic> json) async {
     final serverIp = _ref.read(serverIpProvider);
-    final api = ElysiumApi(serverIp, apiSecret: state?.apiSecret ?? '');
+    final api = ElysiumApi(serverIp);
     try {
       final updated = await api.updateSettings(json);
       state = updated;
@@ -158,8 +158,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   ElysiumApi get _api {
     final serverIp = _ref.read(serverIpProvider);
-    final settings = _ref.read(settingsProvider);
-    return ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? '');
+    return ElysiumApi(serverIp);
   }
 
   Player get player => _player;
@@ -488,8 +487,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   ElysiumApi get _api {
     final serverIp = _ref.read(serverIpProvider);
-    final settings = _ref.read(settingsProvider);
-    return ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? '');
+    return ElysiumApi(serverIp);
   }
 
   Future<void> pushToServer() async {

@@ -20,10 +20,9 @@ class PlayerScreen extends HookConsumerWidget {
     final player = ref.watch(playerProvider);
     final cs = Theme.of(context).colorScheme;
     final serverIp = ref.watch(serverIpProvider);
-    final settings = ref.watch(settingsProvider);
     final api = useMemoized(
-      () => ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? ''),
-      [serverIp, settings?.apiSecret],
+      () => ElysiumApi(serverIp),
+      [serverIp],
     );
 
     final track = player.currentTrack;

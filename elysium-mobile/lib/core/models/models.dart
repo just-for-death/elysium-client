@@ -120,7 +120,6 @@ class ElysiumSettings {
   final String lastFmApiKey;
   final String listenBrainzToken;
   final String listenBrainzUsername;
-  final String apiSecret; // Global auth secret for protected servers
   final bool highQuality;
   final bool cacheEnabled;
   final String queueMode;
@@ -158,7 +157,6 @@ class ElysiumSettings {
     this.lastFmApiKey = '',
     this.listenBrainzToken = '',
     this.listenBrainzUsername = '',
-    this.apiSecret = '',
     this.highQuality = false,
     this.cacheEnabled = true,
     this.queueMode = 'off',
@@ -225,7 +223,6 @@ class ElysiumSettings {
       lastFmApiKey: j['lastFmApiKey']?.toString() ?? '',
       listenBrainzToken: j['listenBrainzToken']?.toString() ?? '',
       listenBrainzUsername: j['listenBrainzUsername']?.toString() ?? '',
-      apiSecret: j['apiSecret']?.toString() ?? '',
       highQuality: toBool(j['highQuality'], false),
       cacheEnabled: toBool(j['cacheEnabled'], true),
       queueMode: j['queueMode']?.toString() ?? 'off',
@@ -262,7 +259,6 @@ class ElysiumSettings {
         'lastFmApiKey': lastFmApiKey,
         'listenBrainzToken': listenBrainzToken,
         'listenBrainzUsername': listenBrainzUsername,
-        'apiSecret': apiSecret,
         'highQuality': highQuality,
         'cacheEnabled': cacheEnabled,
         'queueMode': queueMode,
@@ -298,7 +294,6 @@ class ElysiumSettings {
     String? lastFmApiKey,
     String? listenBrainzToken,
     String? listenBrainzUsername,
-    String? apiSecret,
     bool? highQuality,
     bool? cacheEnabled,
     String? queueMode,
@@ -335,7 +330,6 @@ class ElysiumSettings {
         lastFmApiKey: lastFmApiKey ?? this.lastFmApiKey,
         listenBrainzToken: listenBrainzToken ?? this.listenBrainzToken,
         listenBrainzUsername: listenBrainzUsername ?? this.listenBrainzUsername,
-        apiSecret: apiSecret ?? this.apiSecret,
         highQuality: highQuality ?? this.highQuality,
         cacheEnabled: cacheEnabled ?? this.cacheEnabled,
         queueMode: queueMode ?? this.queueMode,

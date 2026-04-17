@@ -8,7 +8,7 @@ import '../models/track.dart';
 /// Complete Dart port of ElysiumApi.ts.
 /// Every method maps 1:1 to the REST endpoints on the Elysium server.
 class ElysiumApi {
-  ElysiumApi(this.baseUrl, {this.apiSecret = ''});
+  ElysiumApi(this.baseUrl);
 
   // ── Error types for better handling ─────────────────────────────────────────
   static const errTimeout  = 'timeout';
@@ -18,7 +18,6 @@ class ElysiumApi {
   static const errUnknown = 'unknown';
 
   final String baseUrl;
-  final String apiSecret;
 
   String get _lib => '$baseUrl/api/v1/library';
   String get _invidious => '$baseUrl/api/invidious';
@@ -44,7 +43,6 @@ class ElysiumApi {
     final requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (apiSecret.isNotEmpty) 'Authorization': 'Bearer $apiSecret',
       ...?headers,
     };
 

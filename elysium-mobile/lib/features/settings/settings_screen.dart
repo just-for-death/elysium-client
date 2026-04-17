@@ -16,7 +16,7 @@ class SettingsScreen extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final serverIp = ref.watch(serverIpProvider);
     final settings = ref.watch(settingsProvider);
-    final api = useMemoized(() => ElysiumApi(serverIp, apiSecret: settings?.apiSecret ?? ''), [serverIp, settings?.apiSecret]);
+    final api = useMemoized(() => ElysiumApi(serverIp), [serverIp]);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -30,7 +30,6 @@ class SettingsScreen extends HookConsumerWidget {
     final ollamaModelCtrl = useTextEditingController();
     final invidiousInstanceCtrl = useTextEditingController();
     final lastFmKeyCtrl = useTextEditingController();
-    final apiSecretCtrl = useTextEditingController();
 
     // Login controllers
     final invUserCtrl = useTextEditingController();
@@ -78,7 +77,6 @@ class SettingsScreen extends HookConsumerWidget {
         ollamaModelCtrl.text = settings.ollamaModel;
         invidiousInstanceCtrl.text = settings.invidiousInstance;
         lastFmKeyCtrl.text = settings.lastFmApiKey;
-        apiSecretCtrl.text = settings.apiSecret;
       }
       return null;
     }, [settings]);
@@ -175,23 +173,14 @@ class SettingsScreen extends HookConsumerWidget {
 
     Future<void> testAndSaveServer() async {
       final ip = serverCtrl.text.trim();
-      final secret = apiSecretCtrl.text.trim();
       if (ip.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a Server IP')));
         return;
       }
       testingServer.value = true;
       try {
-        // Update local IP first so the API uses it
         await ref.read(serverIpProvider.notifier).update(ip);
-        
-        // Try to fetch settings with the (potentially new) secret
-        final testApi = ElysiumApi(ip, apiSecret: secret);
-        await testApi.getSettings();
-        
-        // Save the secret if successful
-        await ref.read(settingsProvider.notifier).update({'apiSecret': secret});
-        
+        await ElysiumApi(ip).getSettings();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Server connection verified and saved! ✓')));
         }
@@ -276,7 +265,6 @@ class SettingsScreen extends HookConsumerWidget {
           'ollamaModel': ollamaModelCtrl.text.trim(),
           'invidiousInstance': sanitizedInstance,
           'lastFmApiKey': lastFmKeyCtrl.text.trim(),
-          'apiSecret': apiSecretCtrl.text.trim(),
           // New settings
           'gotifyUrl': gotifyUrlCtrl.text.trim(),
           'gotifyToken': gotifyTokenCtrl.text.trim(),
@@ -669,21 +657,6 @@ class SettingsScreen extends HookConsumerWidget {
                         isDark: isDark, 
                         cs: cs,
                         onChanged: (v) => ref.read(serverIpProvider.notifier).update(v.trim()),
-                      ),
-                      const SizedBox(height: 16),
-                      _SettingsLabel('API SECRET', cs),
-                      const SizedBox(height: 8),
-                      _StyledTextField(
-                        controller: apiSecretCtrl, 
-                        hint: 'Required if your server is protected', 
-                        isDark: isDark, 
-                        cs: cs, 
-                        obscure: true,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'This must match the API_SECRET on your server.',
-                        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant.withValues(alpha: 0.5)),
                       ),
                       const SizedBox(height: 16),
                       _TestSaveButton(
