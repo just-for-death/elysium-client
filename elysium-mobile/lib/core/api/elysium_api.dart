@@ -433,4 +433,37 @@ class ElysiumApi {
     final data = await _get('$baseUrl/api/sync/$code');
     return (data['data'] as List<dynamic>? ?? []);
   }
+
+  // ── ListenBrainz direct API ────────────────────────────────────────────────
+  // These call api.listenbrainz.org directly (same as the web frontend).
+  static const _lbApi = 'https://api.listenbrainz.org/1';
+
+  /// Fetch the user's most recent listens from ListenBrainz.
+  Future<List<dynamic>> getLBRecentListens(
+    String username,
+    String token, {
+    int count = 8,
+  }) async {
+    final data = await _get(
+      '$_lbApi/user/${Uri.encodeComponent(username)}/listens?count=$count',
+      headers: {'Authorization': 'Token $token'},
+    );
+    return (data as Map?)?['payload']?['listens'] as List? ?? [];
+  }
+
+  /// Fetch the user's top-played recordings from ListenBrainz.
+  /// [range] is one of: week, month, year, all_time.
+  Future<List<dynamic>> getLBTopRecordings(
+    String username,
+    String token,
+    String range, {
+    int count = 10,
+  }) async {
+    final data = await _get(
+      '$_lbApi/stats/user/${Uri.encodeComponent(username)}/recordings'
+      '?count=$count&range=$range',
+      headers: {'Authorization': 'Token $token'},
+    );
+    return (data as Map?)?['payload']?['recordings'] as List? ?? [];
+  }
 }

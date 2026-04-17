@@ -303,7 +303,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         }
       } else if (playUrl != null && (playUrl.contains('apple.com') || playUrl.contains('itunes'))) {
         if (instance.isEmpty) {
-          // Cannot resolve Apple Music links without Invidious
           throw Exception('Invidious instance required to play Apple Music tracks');
         }
         final results = await api.invidiousSearch('${track.artist} ${track.title} official audio',
@@ -322,6 +321,33 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             orElse: () => formats.isEmpty ? null : formats.first,
           );
 
+          if (bestFormat != null && bestFormat['url'] != null) {
+            playUrl = bestFormat['url'];
+          }
+        }
+      } else if (playUrl == null || playUrl.isEmpty) {
+        // Track has no URL and no videoId (e.g. tapped from ListenBrainz).
+        // Search Invidious by artist + title to resolve a stream.
+        if (instance.isEmpty) {
+          throw Exception('Invidious instance required to resolve this track. Please set one in Settings.');
+        }
+        final results = await api.invidiousSearch(
+            '${track.artist} ${track.title}', instanceUrl: instance);
+        if (version != _playVersion) return;
+
+        if (results.isNotEmpty) {
+          final match = results.first;
+          final details = await api.getVideoDetails(
+              match.videoId ?? match.id,
+              instanceUrl: instance,
+              sid: settings.invidiousSid);
+          if (version != _playVersion) return;
+
+          final formats = (details['adaptiveFormats'] as List<dynamic>? ?? []);
+          final bestFormat = formats.firstWhere(
+            (f) => f['type']?.toString().startsWith('audio/') ?? false,
+            orElse: () => formats.isEmpty ? null : formats.first,
+          );
           if (bestFormat != null && bestFormat['url'] != null) {
             playUrl = bestFormat['url'];
           }
