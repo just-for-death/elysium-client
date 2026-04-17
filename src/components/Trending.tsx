@@ -32,12 +32,14 @@ export const Trending: FC<TrendingProps> = memo(({ horizontal = false }) => {
   );
   const { t } = useTranslation();
 
-  if (!query.data) {
-    return <Text>{t("loading")}</Text>;
+  // Check error before data: on a failed query `data` is undefined, so the
+  // old order would show "loading" forever and never reach the error branch.
+  if (query.isError) {
+    return <Text>{t("error")}</Text>;
   }
 
-  if (query.error) {
-    return <Text>{t("error")}</Text>;
+  if (query.isLoading || !query.data) {
+    return <Text>{t("loading")}</Text>;
   }
 
   if (horizontal) {
